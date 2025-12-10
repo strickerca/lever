@@ -162,7 +162,7 @@ export function HeightWeightInput({
         <select
           value={sex}
           onChange={(e) => onChange({ height, weight, sex: e.target.value as Sex })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
         >
           <option value={Sex.MALE}>Male</option>
           <option value={Sex.FEMALE}>Female</option>

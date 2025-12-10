@@ -108,34 +108,40 @@ export function compareLifts(
     performanceA.reps
   );
 
-  // Step 2: Compute metrics for Lifter B (with load=0 initially to get base metrics)
-  const metricsB_base = calculateLiftMetrics(
-    lifterB.anthropometry,
-    liftFamily,
-    variantB,
-    0,
-    1
-  );
-
-  // Step 3: Calculate demand factors
-  const demandA = metricsA.demandFactor;
-  const demandB = metricsB_base.demandFactor;
-
-  // Step 4: Solve for equivalent load
-  // Load_B = Load_A × (demandA / demandB)
-  const equivalentLoad = performanceA.load * (demandA / demandB);
-
-  // Calculate full metrics for Lifter B with equivalent load
+  // Step 2: Compute metrics for Lifter B with SAME load and reps as Lifter A
   const metricsB = calculateLiftMetrics(
     lifterB.anthropometry,
     liftFamily,
     variantB,
-    equivalentLoad,
+    performanceA.load,
+    performanceA.reps
+  );
+
+  // Step 3: Calculate demand factors (using 1 rep to get pure demand)
+  const metricsA_1rep = calculateLiftMetrics(
+    lifterA.anthropometry,
+    liftFamily,
+    variantA,
+    performanceA.load,
+    1
+  );
+  const metricsB_1rep = calculateLiftMetrics(
+    lifterB.anthropometry,
+    liftFamily,
+    variantB,
+    performanceA.load,
     1
   );
 
+  const demandA = metricsA_1rep.demandFactor;
+  const demandB = metricsB_1rep.demandFactor;
+
+  // Step 4: Solve for equivalent load (what load would Lifter B need for same demand)
+  // Load_B = Load_A × (demandA / demandB)
+  const equivalentLoad = performanceA.load * (demandA / demandB);
+
   // Step 5: Solve for equivalent reps
-  // Reps needed for Lifter B to match Lifter A's total work
+  // Reps needed for Lifter B to match Lifter A's total work at the same load
   const equivalentReps = Math.ceil(metricsA.totalWork / metricsB.workPerRep);
 
   // Step 6: Generate comparison ratios
@@ -165,7 +171,7 @@ export function compareLifts(
       demandRatio,
       advantagePercentage,
       metricsA,
-      metricsB_base,
+      metricsB_base: metricsB,
     }
   );
 

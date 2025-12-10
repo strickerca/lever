@@ -299,7 +299,7 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                 <HelpCircle className="w-4 h-4" />
               </button>
             </div>
-            <div className="font-semibold">
+            <div className="font-semibold text-gray-900">
               {comparison.displacementRatio.toFixed(3)}×
             </div>
             {activeTooltip === "displacement" && (
@@ -333,7 +333,7 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                 <HelpCircle className="w-4 h-4" />
               </button>
             </div>
-            <div className="font-semibold">
+            <div className="font-semibold text-gray-900">
               {comparison.demandRatio.toFixed(3)}×
             </div>
             {activeTooltip === "demand" && (
