@@ -1,7 +1,7 @@
 "use client";
 
 import { Sex } from "@/types";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface HeightWeightInputProps {
   height: number; // in meters
@@ -19,15 +19,32 @@ export function HeightWeightInput({
   const [heightUnit, setHeightUnit] = useState<"cm" | "inches">("cm");
   const [weightUnit, setWeightUnit] = useState<"kg" | "lbs">("kg");
 
-  // Convert for display
-  const heightDisplay =
-    heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1);
-  const weightDisplay =
-    weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1);
+  // Local state for inputs to allow typing
+  const [heightInput, setHeightInput] = useState<string>("");
+  const [weightInput, setWeightInput] = useState<string>("");
+
+  // Update local state when props change
+  useEffect(() => {
+    const displayHeight = heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1);
+    setHeightInput(displayHeight);
+  }, [height, heightUnit]);
+
+  useEffect(() => {
+    const displayWeight = weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1);
+    setWeightInput(displayWeight);
+  }, [weight, weightUnit]);
 
   const handleHeightChange = (value: string) => {
-    const num = parseFloat(value);
-    if (isNaN(num)) return;
+    setHeightInput(value);
+  };
+
+  const handleHeightBlur = () => {
+    const num = parseFloat(heightInput);
+    if (isNaN(num) || num <= 0) {
+      // Reset to current value if invalid
+      setHeightInput(heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1));
+      return;
+    }
 
     // Convert to meters
     const heightInMeters = heightUnit === "cm" ? num / 100 : num / 39.3701;
@@ -35,8 +52,16 @@ export function HeightWeightInput({
   };
 
   const handleWeightChange = (value: string) => {
-    const num = parseFloat(value);
-    if (isNaN(num)) return;
+    setWeightInput(value);
+  };
+
+  const handleWeightBlur = () => {
+    const num = parseFloat(weightInput);
+    if (isNaN(num) || num <= 0) {
+      // Reset to current value if invalid
+      setWeightInput(weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1));
+      return;
+    }
 
     // Convert to kg
     const weightInKg = weightUnit === "kg" ? num : num / 2.20462;
@@ -53,9 +78,11 @@ export function HeightWeightInput({
         <div className="flex gap-2">
           <input
             type="number"
-            value={heightDisplay}
+            value={heightInput}
             onChange={(e) => handleHeightChange(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onBlur={handleHeightBlur}
+            onKeyDown={(e) => e.key === "Enter" && handleHeightBlur()}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
             step={heightUnit === "cm" ? "1" : "0.1"}
           />
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
@@ -93,9 +120,11 @@ export function HeightWeightInput({
         <div className="flex gap-2">
           <input
             type="number"
-            value={weightDisplay}
+            value={weightInput}
             onChange={(e) => handleWeightChange(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onBlur={handleWeightBlur}
+            onKeyDown={(e) => e.key === "Enter" && handleWeightBlur()}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
             step="0.1"
           />
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">

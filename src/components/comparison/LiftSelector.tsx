@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import {
   BenchArchStyle,
   BenchGripWidth,
@@ -57,6 +58,49 @@ export function LiftSelector({
   onChange,
   showLoadReps = true,
 }: LiftSelectorProps) {
+  const [loadUnit, setLoadUnit] = useState<"kg" | "lbs">("kg");
+  const [loadInput, setLoadInput] = useState<string>("");
+  const [repsInput, setRepsInput] = useState<string>("");
+
+  // Update local state when props change
+  useEffect(() => {
+    const displayLoad = loadUnit === "kg" ? load.toFixed(1) : (load * 2.20462).toFixed(1);
+    setLoadInput(displayLoad);
+  }, [load, loadUnit]);
+
+  useEffect(() => {
+    setRepsInput(reps.toString());
+  }, [reps]);
+
+  const handleLoadChange = (value: string) => {
+    setLoadInput(value);
+  };
+
+  const handleLoadBlur = () => {
+    const num = parseFloat(loadInput);
+    if (isNaN(num) || num < 0) {
+      setLoadInput(loadUnit === "kg" ? load.toFixed(1) : (load * 2.20462).toFixed(1));
+      return;
+    }
+
+    const loadInKg = loadUnit === "kg" ? num : num / 2.20462;
+    onChange({ liftFamily, variant, load: loadInKg, reps });
+  };
+
+  const handleRepsChange = (value: string) => {
+    setRepsInput(value);
+  };
+
+  const handleRepsBlur = () => {
+    const num = parseInt(repsInput);
+    if (isNaN(num) || num < 1) {
+      setRepsInput(reps.toString());
+      return;
+    }
+
+    onChange({ liftFamily, variant, load, reps: num });
+  };
+
   const getVariants = () => {
     switch (liftFamily) {
       case LiftFamily.SQUAT:
@@ -114,7 +158,7 @@ export function LiftSelector({
         <select
           value={liftFamily}
           onChange={(e) => handleLiftFamilyChange(e.target.value as LiftFamily)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
         >
           <option value={LiftFamily.SQUAT}>Squat</option>
           <option value={LiftFamily.DEADLIFT}>Deadlift</option>
@@ -137,7 +181,7 @@ export function LiftSelector({
             onChange={(e) =>
               onChange({ liftFamily, variant: e.target.value, load, reps })
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
           >
             {variants.map((v) => (
               <option key={v.value} value={v.value}>
@@ -154,23 +198,44 @@ export function LiftSelector({
           {needsLoad && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Load (kg)
+                Load
               </label>
-              <input
-                type="number"
-                value={load}
-                onChange={(e) =>
-                  onChange({
-                    liftFamily,
-                    variant,
-                    load: parseFloat(e.target.value) || 0,
-                    reps,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="0"
-                step="2.5"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={loadInput}
+                  onChange={(e) => handleLoadChange(e.target.value)}
+                  onBlur={handleLoadBlur}
+                  onKeyDown={(e) => e.key === "Enter" && handleLoadBlur()}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+                  min="0"
+                  step="2.5"
+                />
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setLoadUnit("kg")}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      loadUnit === "kg"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    kg
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoadUnit("lbs")}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
+                      loadUnit === "lbs"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    lbs
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -181,16 +246,11 @@ export function LiftSelector({
             </label>
             <input
               type="number"
-              value={reps}
-              onChange={(e) =>
-                onChange({
-                  liftFamily,
-                  variant,
-                  load,
-                  reps: parseInt(e.target.value) || 1,
-                })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={repsInput}
+              onChange={(e) => handleRepsChange(e.target.value)}
+              onBlur={handleRepsBlur}
+              onKeyDown={(e) => e.key === "Enter" && handleRepsBlur()}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
               min="1"
               step="1"
             />

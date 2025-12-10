@@ -236,13 +236,16 @@ function generateExplanations(
     const longerName =
       comparison.displacementRatio > 1 ? anthroB.sex : anthroA.sex;
     const longerLifter = comparison.displacementRatio > 1 ? "B" : "A";
+    const shorterLifter = comparison.displacementRatio > 1 ? "A" : "B";
     const impact =
       comparison.displacementRatio > 1 ? "advantage_A" : "advantage_B";
+
+    const distanceCm = Math.abs((comparison.metricsB_base.displacement - comparison.metricsA.displacement) * 100);
 
     explanations.push({
       type: "displacement",
       impact,
-      message: `Lifter ${longerLifter} moves the bar ${displacementDiff.toFixed(1)}% further (${comparison.metricsB_base.displacement.toFixed(3)}m vs ${comparison.metricsA.displacement.toFixed(3)}m)`,
+      message: `Lifter ${longerLifter} moves the bar ${displacementDiff.toFixed(1)}% further (${distanceCm.toFixed(1)}cm more ROM). This means Lifter ${longerLifter} does more work per rep and may need greater mobility, while Lifter ${shorterLifter} can lift more weight with less fatigue per rep.`,
     });
   }
 
@@ -262,12 +265,13 @@ function generateExplanations(
 
     if (momentArmDiff > 2) {
       const largerLifter = momentArmRatio > 1 ? "B" : "A";
+      const smallerLifter = momentArmRatio > 1 ? "A" : "B";
       const impact = momentArmRatio > 1 ? "advantage_A" : "advantage_B";
 
       explanations.push({
         type: "moment_arm",
         impact,
-        message: `Lifter ${largerLifter} has ${momentArmDiff.toFixed(1)}% larger hip moment arm (${kinB.momentArms.hip.toFixed(3)}m vs ${kinA.momentArms.hip.toFixed(3)}m)`,
+        message: `Lifter ${largerLifter} has ${momentArmDiff.toFixed(1)}% larger hip moment arm, making the lift biomechanically harder. This means Lifter ${largerLifter} needs stronger hip extensors and posterior chain muscles to handle the same weight, while Lifter ${smallerLifter} has better leverage and can potentially lift more.`,
       });
     }
 
@@ -275,10 +279,11 @@ function generateExplanations(
     const trunkAngleDiff = Math.abs(kinB.angles.trunk - kinA.angles.trunk);
     if (trunkAngleDiff > 3) {
       const moreUpright = kinB.angles.trunk > kinA.angles.trunk ? "B" : "A";
+      const lessUpright = kinB.angles.trunk > kinA.angles.trunk ? "A" : "B";
       explanations.push({
         type: "trunk_angle",
         impact: "neutral",
-        message: `Lifter ${moreUpright} squats more upright (${kinB.angles.trunk.toFixed(1)}° vs ${kinA.angles.trunk.toFixed(1)}°)`,
+        message: `Lifter ${moreUpright} squats ${trunkAngleDiff.toFixed(0)}° more upright, which typically means more quad emphasis and less posterior chain demand. Lifter ${lessUpright}'s more horizontal trunk shifts load toward the glutes, hamstrings, and lower back. Neither position is inherently better - it depends on individual strengths.`,
       });
     }
   }
@@ -291,12 +296,13 @@ function generateExplanations(
 
     if (armLengthDiff > 2) {
       const longerArms = armLengthB > armLengthA ? "B" : "A";
+      const shorterArms = armLengthB > armLengthA ? "A" : "B";
       const impact = armLengthB > armLengthA ? "advantage_B" : "advantage_A";
 
       explanations.push({
         type: "arm_length",
         impact,
-        message: `Lifter ${longerArms} has ${armLengthDiff.toFixed(1)}cm longer arms, reducing ROM`,
+        message: `Lifter ${longerArms} has ${armLengthDiff.toFixed(1)}cm longer arms, which reduces how far the bar must travel. This is a significant advantage in deadlifts - longer arms mean a higher starting position and less total distance to pull. Lifter ${shorterArms} must pull through greater ROM and may benefit from sumo stance or building more strength.`,
       });
     }
   }
@@ -305,19 +311,31 @@ function generateExplanations(
   if (Math.abs(comparison.advantagePercentage) > 1) {
     const advantagedLifter =
       comparison.demandRatio < 1 ? "B" : "A";
+    const disadvantagedLifter =
+      comparison.demandRatio < 1 ? "A" : "B";
     const impact =
       comparison.demandRatio < 1 ? "advantage_B" : "advantage_A";
+
+    const advantageLevel = Math.abs(comparison.advantagePercentage);
+    let interpretation = "";
+    if (advantageLevel > 15) {
+      interpretation = "This is a substantial difference that will significantly affect relative performance.";
+    } else if (advantageLevel > 8) {
+      interpretation = "This is a notable difference that explains much of the performance gap.";
+    } else {
+      interpretation = "This is a modest difference that may be less important than training and technique.";
+    }
 
     explanations.push({
       type: "summary",
       impact,
-      message: `Overall, Lifter ${advantagedLifter} has ${Math.abs(comparison.advantagePercentage).toFixed(1)}% mechanical advantage`,
+      message: `Bottom line: Lifter ${advantagedLifter} has ${Math.abs(comparison.advantagePercentage).toFixed(1)}% mechanical advantage due to better biomechanical positioning. ${interpretation} When comparing performances, Lifter ${disadvantagedLifter} should consider using the equivalent load calculations above for a fair comparison.`,
     });
   } else {
     explanations.push({
       type: "summary",
       impact: "neutral",
-      message: "Both lifters have similar mechanical demands",
+      message: "Both lifters have nearly identical mechanical demands. Any performance differences are likely due to strength levels, training, and technique rather than biomechanics. This makes for a very fair direct comparison.",
     });
   }
 

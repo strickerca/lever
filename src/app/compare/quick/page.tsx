@@ -24,18 +24,18 @@ export default function QuickComparePage() {
   // Store
   const { addComparison } = useLeverStore();
 
-  // Lifter A state
+  // Lifter A state - average male: 175cm, 77kg
   const [lifterA, setLifterA] = useState({
     height: 1.75,
-    weight: 75,
+    weight: 77,
     sex: Sex.MALE,
     name: "Lifter A",
   });
 
-  // Lifter B state
+  // Lifter B state - slightly taller male: 185cm, 88kg
   const [lifterB, setLifterB] = useState({
     height: 1.85,
-    weight: 85,
+    weight: 88,
     sex: Sex.MALE,
     name: "Lifter B",
   });
