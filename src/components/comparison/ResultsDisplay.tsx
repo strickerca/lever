@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { HelpCircle } from "lucide-react";
 import { ComparisonResult } from "@/types";
 
@@ -11,6 +11,42 @@ interface ResultsDisplayProps {
 export function ResultsDisplay({ result }: ResultsDisplayProps) {
   const { lifterA, lifterB, comparison } = result;
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+
+  // Calculate number of reps from the metrics
+  const reps = lifterA.metrics.totalWork / lifterA.metrics.workPerRep;
+
+  // Time input for power calculations (default: 2.5 seconds per rep)
+  const [timeInput, setTimeInput] = useState<string>((reps * 2.5).toFixed(1));
+  const [time, setTime] = useState(reps * 2.5);
+
+  // Update time when reps change
+  useEffect(() => {
+    const defaultTime = reps * 2.5;
+    setTimeInput(defaultTime.toFixed(1));
+    setTime(defaultTime);
+  }, [reps]);
+
+  const handleTimeChange = (value: string) => {
+    setTimeInput(value);
+  };
+
+  const handleTimeBlur = () => {
+    const num = parseFloat(timeInput);
+    if (isNaN(num) || num <= 0) {
+      const defaultTime = reps * 2.5;
+      setTimeInput(defaultTime.toFixed(1));
+      setTime(defaultTime);
+      return;
+    }
+    setTime(num);
+  };
+
+  // Power calculations (Watts = Joules / seconds)
+  const powerA = lifterA.metrics.totalWork / time;
+  const powerB = lifterB.metrics ? lifterB.metrics.totalWork / time : 0;
+  const powerDifferencePercent = powerB > 0 ? ((powerB - powerA) / powerA) * 100 : 0;
+  const powerDifferenceAbsolute = powerB - powerA;
+  const powerRatio = powerB > 0 ? powerB / powerA : 0;
 
   // Calculate bar widths (normalized to the larger value)
   const maxWork = Math.max(
@@ -123,6 +159,9 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                 <div className="text-xs text-gray-500 mt-1">
                   {(lifterA.metrics.scoreP4P / (lifterA.metrics.totalWork / lifterA.metrics.workPerRep)).toFixed(1)} P4P/rep
                 </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {(powerA / reps).toFixed(0)} W/rep
+                </div>
               </div>
               <div className="p-3 bg-orange-50 rounded-lg">
                 <div className="text-xs text-gray-600 mb-1">{lifterB.name}</div>
@@ -132,13 +171,37 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                 <div className="text-xs text-gray-500 mt-1">
                   {lifterB.metrics ? (lifterB.metrics.scoreP4P / (lifterB.metrics.totalWork / lifterB.metrics.workPerRep)).toFixed(1) : "—"} P4P/rep
                 </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {lifterB.metrics ? (powerB / reps).toFixed(0) : "—"} W/rep
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Total Volume Comparison */}
+          {/* Total Volume Comparison with Power */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-2">Total Volume</h4>
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Total Volume & Power Output</h4>
+
+            {/* Time Input */}
+            <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+              <label className="block text-xs text-gray-600 mb-1">
+                Time to complete {reps.toFixed(0)} reps (seconds):
+              </label>
+              <input
+                type="number"
+                value={timeInput}
+                onChange={(e) => handleTimeChange(e.target.value)}
+                onBlur={handleTimeBlur}
+                onKeyDown={(e) => e.key === "Enter" && handleTimeBlur()}
+                className="w-32 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium"
+                min="0.1"
+                step="0.1"
+              />
+              <span className="ml-2 text-xs text-gray-500">
+                (avg: {(reps * 2.5).toFixed(1)}s)
+              </span>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 bg-blue-50 rounded-lg">
                 <div className="text-xs text-gray-600 mb-1">{lifterA.name}</div>
@@ -146,7 +209,10 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                   {lifterA.metrics.totalWork.toFixed(0)} J
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {(lifterA.metrics.totalWork / lifterA.metrics.workPerRep).toFixed(0)} reps
+                  {reps.toFixed(0)} reps in {time.toFixed(1)}s
+                </div>
+                <div className="text-xs font-semibold text-blue-600 mt-1">
+                  {powerA.toFixed(0)} W
                 </div>
               </div>
               <div className="p-3 bg-orange-50 rounded-lg">
@@ -155,58 +221,77 @@ export function ResultsDisplay({ result }: ResultsDisplayProps) {
                   {lifterB.metrics?.totalWork.toFixed(0) || "—"} J
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {lifterB.metrics ? (lifterB.metrics.totalWork / lifterB.metrics.workPerRep).toFixed(0) : "—"} reps
+                  {lifterB.metrics ? `${reps.toFixed(0)} reps in ${time.toFixed(1)}s` : "—"}
+                </div>
+                <div className="text-xs font-semibold text-orange-600 mt-1">
+                  {lifterB.metrics ? `${powerB.toFixed(0)} W` : "—"}
                 </div>
               </div>
             </div>
             {lifterB.metrics && (
-              <div className="mt-2 text-center text-sm text-gray-600">
-                {lifterA.metrics.totalWork > lifterB.metrics.totalWork
-                  ? `${lifterA.name} performed ${((lifterA.metrics.totalWork / lifterB.metrics.totalWork - 1) * 100).toFixed(1)}% more work`
-                  : `${lifterB.name} performed ${((lifterB.metrics.totalWork / lifterA.metrics.totalWork - 1) * 100).toFixed(1)}% more work`
-                }
+              <div className="mt-2 space-y-1 text-center text-sm text-gray-600">
+                <div>
+                  {lifterA.metrics.totalWork > lifterB.metrics.totalWork
+                    ? `${lifterA.name} performed ${((lifterA.metrics.totalWork / lifterB.metrics.totalWork - 1) * 100).toFixed(1)}% more work`
+                    : `${lifterB.name} performed ${((lifterB.metrics.totalWork / lifterA.metrics.totalWork - 1) * 100).toFixed(1)}% more work`
+                  }
+                </div>
+                <div className="font-medium">
+                  {powerDifferencePercent > 0
+                    ? `${lifterB.name} produced ${powerDifferencePercent.toFixed(1)}% more power (${powerDifferenceAbsolute.toFixed(0)}W)`
+                    : `${lifterA.name} produced ${Math.abs(powerDifferencePercent).toFixed(1)}% more power (${Math.abs(powerDifferenceAbsolute).toFixed(0)}W)`
+                  }
+                </div>
               </div>
             )}
           </div>
 
-          {/* Equivalent Load Options */}
+          {/* Equivalent Performance - Sentence Form */}
           <div className="border-t border-gray-200 pt-4">
             <h4 className="text-sm font-semibold text-gray-700 mb-3">To Match {lifterA.name}'s Performance:</h4>
 
-            <div className="space-y-2">
-              {/* Option 1: Same reps, different load */}
-              <div className="p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
-                    <span className="font-semibold">{lifterB.name}</span> would need:
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-orange-700">
-                      {lifterB.equivalentLoad.toFixed(1)} kg
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      for {(lifterA.metrics.totalWork / lifterA.metrics.workPerRep).toFixed(0)} reps
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-3 p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+              <p className="text-sm text-gray-800 leading-relaxed">
+                <span className="font-semibold text-orange-700">{lifterB.name}</span> would need to lift{" "}
+                <span className="font-bold text-orange-700">{lifterB.equivalentLoad.toFixed(1)} kg</span>{" "}
+                for the same {reps.toFixed(0)} reps to match the biomechanical demand.
+              </p>
 
-              {/* Option 2: Same load, different reps */}
-              <div className="p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg border border-orange-200">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
-                    Or <span className="font-semibold">{lifterB.name}</span> would need:
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-orange-700">
-                      {lifterB.equivalentReps} reps
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      at the same load
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm text-gray-800 leading-relaxed">
+                Alternatively, at the same {lifterA.metrics.effectiveMass.toFixed(0)} kg effective load,{" "}
+                <span className="font-semibold text-orange-700">{lifterB.name}</span> would need to perform{" "}
+                <span className="font-bold text-orange-700">{lifterB.equivalentReps.toFixed(1)} reps</span>{" "}
+                (instead of {reps.toFixed(0)}) to match the total work output.
+              </p>
+
+              {lifterB.metrics && (
+                <>
+                  <p className="text-sm text-gray-800 leading-relaxed border-t border-orange-200 pt-3">
+                    To complete the same {reps.toFixed(0)} reps in {time.toFixed(1)} seconds,{" "}
+                    <span className="font-semibold text-orange-700">{lifterB.name}</span> would need to produce{" "}
+                    {powerDifferencePercent > 0 ? (
+                      <>
+                        <span className="font-bold text-orange-700">{powerDifferencePercent.toFixed(1)}% less power</span>{" "}
+                        ({powerB.toFixed(0)}W vs {powerA.toFixed(0)}W, a difference of {Math.abs(powerDifferenceAbsolute).toFixed(0)}W)
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-bold text-orange-700">{Math.abs(powerDifferencePercent).toFixed(1)}% more power</span>{" "}
+                        ({powerB.toFixed(0)}W vs {powerA.toFixed(0)}W, a difference of {Math.abs(powerDifferenceAbsolute).toFixed(0)}W)
+                      </>
+                    )}{" "}
+                    due to their biomechanical differences.
+                  </p>
+
+                  <p className="text-xs text-gray-600 italic">
+                    Power ratio: {powerRatio.toFixed(3)}× | {" "}
+                    {powerRatio > 1
+                      ? `${lifterB.name} needs ${((powerRatio - 1) * 100).toFixed(1)}% more power output`
+                      : `${lifterB.name} needs ${((1 - powerRatio) * 100).toFixed(1)}% less power output`
+                    }
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
