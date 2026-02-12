@@ -233,32 +233,32 @@ describe("Anthropometry", () => {
       expect(validation.errors).toHaveLength(0);
     });
 
-    it("should reject height below minimum (1.4m)", () => {
-      const profile = createSimpleProfile(1.3, 80, Sex.MALE);
+    it("should reject height below minimum (0.5m)", () => {
+      const profile = createSimpleProfile(0.4, 80, Sex.MALE);
       const validation = validateAnthropometry(profile);
 
       expect(validation.valid).toBe(false);
       expect(validation.errors.length).toBeGreaterThan(0);
     });
 
-    it("should reject height above maximum (2.2m)", () => {
-      const profile = createSimpleProfile(2.3, 80, Sex.MALE);
+    it("should reject height above maximum (10m)", () => {
+      const profile = createSimpleProfile(10.5, 80, Sex.MALE);
       const validation = validateAnthropometry(profile);
 
       expect(validation.valid).toBe(false);
       expect(validation.errors.length).toBeGreaterThan(0);
     });
 
-    it("should reject mass below minimum (40kg)", () => {
-      const profile = createSimpleProfile(1.8, 35, Sex.MALE);
+    it("should reject mass below minimum (10kg)", () => {
+      const profile = createSimpleProfile(1.8, 5, Sex.MALE);
       const validation = validateAnthropometry(profile);
 
       expect(validation.valid).toBe(false);
       expect(validation.errors.length).toBeGreaterThan(0);
     });
 
-    it("should reject mass above maximum (200kg)", () => {
-      const profile = createSimpleProfile(1.8, 250, Sex.MALE);
+    it("should reject mass above maximum (1000kg)", () => {
+      const profile = createSimpleProfile(1.8, 1100, Sex.MALE);
       const validation = validateAnthropometry(profile);
 
       expect(validation.valid).toBe(false);

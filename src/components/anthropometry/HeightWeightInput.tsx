@@ -82,6 +82,7 @@ export function HeightWeightInput({
             onChange={(e) => handleHeightChange(e.target.value)}
             onBlur={handleHeightBlur}
             onKeyDown={(e) => e.key === "Enter" && handleHeightBlur()}
+            onFocus={(e) => e.target.select()}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
             step={heightUnit === "cm" ? "1" : "0.1"}
           />
@@ -124,6 +125,7 @@ export function HeightWeightInput({
             onChange={(e) => handleWeightChange(e.target.value)}
             onBlur={handleWeightBlur}
             onKeyDown={(e) => e.key === "Enter" && handleWeightBlur()}
+            onFocus={(e) => e.target.select()}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
             step="0.1"
           />

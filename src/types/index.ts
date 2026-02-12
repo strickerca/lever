@@ -36,6 +36,20 @@ export enum DeadliftVariant {
   SUMO = "sumo",
 }
 
+export enum SquatStance {
+  NARROW = "narrow",
+  NORMAL = "normal",
+  WIDE = "wide",
+  ULTRA_WIDE = "ultraWide",
+}
+
+export enum SumoStance {
+  HYBRID = "hybrid", // Narrow sumo, just outside hands/arms
+  NORMAL = "normal",
+  WIDE = "wide",
+  ULTRA_WIDE = "ultraWide",
+}
+
 export enum BenchGripWidth {
   NARROW = "narrow",
   MEDIUM = "medium",
@@ -150,6 +164,21 @@ export interface ComparisonResult {
     displacementRatio: number; // lifterB.displacement / lifterA.displacement
     advantagePercentage: number; // (demandRatio - 1) * 100
     advantageDirection: "advantage_A" | "advantage_B" | "neutral";
+  };
+  /**
+   * Capacity-adjusted comparison accounting for research-based load capacity differences
+   * between squat variants (e.g., low bar allows ~7.5% more load than high bar)
+   * Only present for squat comparisons with different variants
+   */
+  capacityAdjusted?: {
+    lifterACapacityFactor: number; // e.g., 1.00 for high bar
+    lifterBCapacityFactor: number; // e.g., 1.075 for low bar
+    adjustedLoadA: number; // Lifter A's load normalized by capacity factor
+    adjustedLoadB: number; // Lifter B's load normalized by capacity factor
+    adjustedDemandRatio: number; // Demand ratio after capacity adjustment
+    adjustedAdvantagePercentage: number; // Advantage % after capacity adjustment
+    adjustedAdvantageDirection: "advantage_A" | "advantage_B" | "neutral";
+    explanation: string; // Description of what the adjustment represents
   };
   explanations: Array<{
     type: string;

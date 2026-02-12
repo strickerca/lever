@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { solveSquatKinematics } from "../kinematics";
+import { solveSquatKinematics, solveDeadliftKinematics } from "../kinematics";
 import { createSimpleProfile, createAdvancedProfile } from "../anthropometry";
 import { Sex } from "@/types";
+import { calculateDeadliftDisplacement, calculateDeadliftWork } from "../physics";
 
 describe("Kinematics Solver", () => {
   describe("Identity test", () => {
@@ -139,6 +140,53 @@ describe("Kinematics Solver", () => {
       expect(highBar.momentArms.hip).toBeLessThan(0.5);
       expect(lowBar.momentArms.hip).toBeLessThan(0.5);
     });
+
+    it("should show high bar has MORE ROM than low bar (CRITICAL biomechanics test)", () => {
+      // This test verifies the key biomechanics behavior:
+      // High bar squats have greater ROM than low bar squats
+      // This is because the bar position rotates with the trunk,
+      // and high bar's higher starting position results in more vertical displacement
+      // The actual difference is modest (~0.5-2%) because the trunk angle compensation
+      // partially offsets the bar position difference
+      const profile = createSimpleProfile(1.8, 80, Sex.MALE);
+
+      const highBar = solveSquatKinematics(profile, "highBar");
+      const lowBar = solveSquatKinematics(profile, "lowBar");
+
+      // High bar should have MORE displacement than low bar
+      expect(highBar.displacement).toBeGreaterThan(lowBar.displacement);
+
+      // The difference is modest because trunk angle compensation partially offsets bar position
+      // High bar: higher bar start + less forward lean
+      // Low bar: lower bar start + more forward lean (which increases displacement)
+      // Net effect: high bar has slightly more ROM (~0.5-2%)
+      const romDifferencePercent = ((highBar.displacement - lowBar.displacement) / lowBar.displacement) * 100;
+      expect(romDifferencePercent).toBeGreaterThan(0.5); // At least 0.5% more ROM
+      expect(romDifferencePercent).toBeLessThan(5);      // But modest difference
+    });
+
+    it("should show low bar has more forward trunk lean than high bar", () => {
+      // Low bar requires more forward lean to keep bar over midfoot
+      const profile = createSimpleProfile(1.8, 80, Sex.MALE);
+
+      const highBar = solveSquatKinematics(profile, "highBar");
+      const lowBar = solveSquatKinematics(profile, "lowBar");
+
+      // Higher trunk angle = more forward lean
+      expect(lowBar.angles.trunk).toBeGreaterThan(highBar.angles.trunk);
+    });
+
+    it("should show front squat has most upright trunk position", () => {
+      const profile = createSimpleProfile(1.8, 80, Sex.MALE);
+
+      const highBar = solveSquatKinematics(profile, "highBar");
+      const lowBar = solveSquatKinematics(profile, "lowBar");
+      const front = solveSquatKinematics(profile, "front");
+
+      // Front squat should have smallest trunk angle (most upright)
+      expect(front.angles.trunk).toBeLessThan(highBar.angles.trunk);
+      expect(front.angles.trunk).toBeLessThan(lowBar.angles.trunk);
+    });
   });
 
   describe("Mobility limitations", () => {
@@ -251,6 +299,119 @@ describe("Kinematics Solver", () => {
       const kinTall = solveSquatKinematics(tall, "highBar");
 
       expect(kinTall.displacement).toBeGreaterThan(kinShort.displacement);
+    });
+  });
+
+  describe("Deadlift Bar Elevation Offset", () => {
+    const profile = createSimpleProfile(1.75, 77, Sex.MALE);
+
+    describe("Zero offset (standard deadlift)", () => {
+      it("should match current behavior with zero offset", () => {
+        const kinZero = solveDeadliftKinematics(profile, "conventional", "normal", 0);
+        const dispZero = calculateDeadliftDisplacement(profile, "conventional", "normal", 0);
+
+        expect(kinZero.valid).toBe(true);
+        expect(kinZero.displacement).toBeGreaterThan(0);
+        expect(kinZero.displacement).toBe(dispZero);
+      });
+    });
+
+    describe("Deficit deadlift (negative offset)", () => {
+      it("should increase ROM for deficit pulls", () => {
+        const dispStandard = calculateDeadliftDisplacement(profile, "conventional", "normal", 0);
+        const dispDeficit = calculateDeadliftDisplacement(profile, "conventional", "normal", -0.05); // 5cm deficit
+
+        expect(dispDeficit).toBeGreaterThan(dispStandard);
+        expect(dispDeficit - dispStandard).toBeCloseTo(0.05, 2);
+      });
+
+      it("should increase work for deficit pulls", () => {
+        const workStandard = calculateDeadliftWork(profile, "conventional", 100, 5, "normal", 0);
+        const workDeficit = calculateDeadliftWork(profile, "conventional", 100, 5, "normal", -0.05);
+
+        expect(workDeficit.totalWork).toBeGreaterThan(workStandard.totalWork);
+        expect(workDeficit.displacement).toBeGreaterThan(workStandard.displacement);
+      });
+
+      it("should handle 2-inch deficit correctly", () => {
+        const offsetMeters = -0.0508; // -2 inches in meters
+        const dispStandard = calculateDeadliftDisplacement(profile, "conventional", "normal", 0);
+        const dispDeficit = calculateDeadliftDisplacement(profile, "conventional", "normal", offsetMeters);
+
+        expect(dispDeficit - dispStandard).toBeCloseTo(0.0508, 3);
+      });
+    });
+
+    describe("Block pulls (positive offset)", () => {
+      it("should decrease ROM for block pulls", () => {
+        const dispStandard = calculateDeadliftDisplacement(profile, "conventional", "normal", 0);
+        const dispBlocks = calculateDeadliftDisplacement(profile, "conventional", "normal", 0.10); // 10cm blocks
+
+        expect(dispBlocks).toBeLessThan(dispStandard);
+        expect(dispStandard - dispBlocks).toBeCloseTo(0.10, 2);
+      });
+
+      it("should decrease work for block pulls", () => {
+        const workStandard = calculateDeadliftWork(profile, "conventional", 100, 5, "normal", 0);
+        const workBlocks = calculateDeadliftWork(profile, "conventional", 100, 5, "normal", 0.10);
+
+        expect(workBlocks.totalWork).toBeLessThan(workStandard.totalWork);
+        expect(workBlocks.displacement).toBeLessThan(workStandard.displacement);
+      });
+
+      it("should handle 4-inch blocks correctly", () => {
+        const offsetMeters = 0.1016; // 4 inches in meters
+        const dispStandard = calculateDeadliftDisplacement(profile, "conventional", "normal", 0);
+        const dispBlocks = calculateDeadliftDisplacement(profile, "conventional", "normal", offsetMeters);
+
+        expect(dispStandard - dispBlocks).toBeCloseTo(0.1016, 3);
+      });
+    });
+
+    describe("Work monotonicity", () => {
+      it("should have monotonic work relationship with offset", () => {
+        const offsets = [-0.05, -0.025, 0, 0.025, 0.05];
+        const works = offsets.map(offset =>
+          calculateDeadliftWork(profile, "conventional", 100, 1, "normal", offset).totalWork
+        );
+
+        // Work should decrease as offset increases (deficit to blocks)
+        for (let i = 1; i < works.length; i++) {
+          expect(works[i]!).toBeLessThan(works[i - 1]!);
+        }
+      });
+    });
+
+    describe("Kinematics changes", () => {
+      it("should update moment arms with offset", () => {
+        const kinStandard = solveDeadliftKinematics(profile, "conventional", "normal", 0);
+        const kinBlocks = solveDeadliftKinematics(profile, "conventional", "normal", 0.10);
+
+        // Higher start = smaller moment arms (more upright)
+        expect(kinBlocks.momentArms.hip).toBeLessThan(kinStandard.momentArms.hip);
+        expect(kinBlocks.momentArms.knee).toBeLessThan(kinStandard.momentArms.knee);
+      });
+
+      it("should update displacement in kinematics", () => {
+        const kinDeficit = solveDeadliftKinematics(profile, "conventional", "normal", -0.05);
+        const kinStandard = solveDeadliftKinematics(profile, "conventional", "normal", 0);
+        const kinBlocks = solveDeadliftKinematics(profile, "conventional", "normal", 0.05);
+
+        expect(kinDeficit.displacement).toBeGreaterThan(kinStandard.displacement);
+        expect(kinBlocks.displacement).toBeLessThan(kinStandard.displacement);
+      });
+    });
+
+    describe("Sumo variant", () => {
+      it("should apply offset correctly to sumo deadlift", () => {
+        const dispSumoStandard = calculateDeadliftDisplacement(profile, "sumo", "normal", 0);
+        const dispSumoDeficit = calculateDeadliftDisplacement(profile, "sumo", "normal", -0.05);
+
+        expect(dispSumoDeficit).toBeGreaterThan(dispSumoStandard);
+        // Difference is offset × ROM multiplier (0.05 × 0.85 = 0.0425)
+        // because sumo applies ROM multiplier to conventional displacement
+        expect(dispSumoDeficit - dispSumoStandard).toBeCloseTo(0.0425, 3);
+      });
     });
   });
 });

@@ -4,12 +4,23 @@ import {
   BenchGripWidth,
   ComparisonResult,
   DeadliftVariant,
+  KinematicSolution,
   LiftFamily,
   LiftMetrics,
   PullupGrip,
+  SquatStance,
   SquatVariant,
+  SumoStance,
 } from "../../types";
-import { solveSquatKinematics } from "./kinematics";
+import {
+  solveSquatKinematics,
+  solveDeadliftKinematics,
+  solveBenchKinematics,
+  solvePullupKinematics,
+  solveOHPKinematics,
+  solveThrusterKinematics,
+  solvePushupKinematics,
+} from "./kinematics";
 import {
   calculateBenchWork,
   calculateDeadliftWork,
@@ -19,6 +30,7 @@ import {
   calculateSquatWork,
   calculateThrusterWork,
 } from "./physics";
+import { SQUAT_VARIANT_LOAD_CAPACITY_FACTORS } from "./constants";
 
 /**
  * Calculates lift metrics based on lift family and variant
@@ -28,7 +40,10 @@ function calculateLiftMetrics(
   liftFamily: LiftFamily,
   variant: string,
   load: number,
-  reps: number
+  reps: number,
+  stance?: string,
+  pushupWeight?: number,
+  barStartHeightOffset?: number
 ): LiftMetrics {
   switch (liftFamily) {
     case LiftFamily.SQUAT:
@@ -36,7 +51,8 @@ function calculateLiftMetrics(
         anthropometry,
         variant as SquatVariant | "highBar" | "lowBar" | "front",
         load,
-        reps
+        reps,
+        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal"
       );
 
     case LiftFamily.DEADLIFT:
@@ -44,12 +60,37 @@ function calculateLiftMetrics(
         anthropometry,
         variant as DeadliftVariant | "conventional" | "sumo",
         load,
-        reps
+        reps,
+        (stance as SumoStance | "hybrid" | "normal" | "wide" | "ultraWide") || "normal",
+        barStartHeightOffset || 0
       );
 
     case LiftFamily.BENCH:
       // Parse bench variant (e.g., "medium-moderate")
-      const [gripWidth, archStyle] = variant.split("-");
+      const parts = variant.split("-");
+      if (parts.length !== 2) {
+        throw new Error(
+          `Invalid bench press variant format: "${variant}". Expected format: "{gripWidth}-{archStyle}" (e.g., "medium-moderate")`
+        );
+      }
+      const [gripWidth, archStyle] = parts;
+
+      // Validate grip width
+      const validGripWidths = ["narrow", "medium", "wide"];
+      if (!validGripWidths.includes(gripWidth!)) {
+        throw new Error(
+          `Invalid grip width: "${gripWidth}". Must be one of: ${validGripWidths.join(", ")}`
+        );
+      }
+
+      // Validate arch style
+      const validArchStyles = ["flat", "moderate", "competitive", "extreme"];
+      if (!validArchStyles.includes(archStyle!)) {
+        throw new Error(
+          `Invalid arch style: "${archStyle}". Must be one of: ${validArchStyles.join(", ")}`
+        );
+      }
+
       return calculateBenchWork(
         anthropometry,
         gripWidth as BenchGripWidth,
@@ -67,7 +108,7 @@ function calculateLiftMetrics(
       );
 
     case LiftFamily.PUSHUP:
-      return calculatePushupWork(anthropometry, reps);
+      return calculatePushupWork(anthropometry, reps, pushupWeight || 0);
 
     case LiftFamily.OHP:
       return calculateOHPWork(anthropometry, load, reps);
@@ -81,6 +122,60 @@ function calculateLiftMetrics(
 }
 
 /**
+ * Helper function to get kinematics for any lift type
+ */
+function getKinematics(
+  anthropometry: Anthropometry,
+  liftFamily: LiftFamily,
+  variant: string,
+  stance?: string,
+  barStartHeightOffset?: number
+): KinematicSolution | undefined {
+  switch (liftFamily) {
+    case LiftFamily.SQUAT:
+      return solveSquatKinematics(
+        anthropometry,
+        variant as SquatVariant | "highBar" | "lowBar" | "front",
+        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal"
+      );
+
+    case LiftFamily.DEADLIFT:
+      return solveDeadliftKinematics(
+        anthropometry,
+        variant as DeadliftVariant | "conventional" | "sumo",
+        (stance as SumoStance | "hybrid" | "normal" | "wide" | "ultraWide") || "normal",
+        barStartHeightOffset || 0
+      );
+
+    case LiftFamily.BENCH:
+      const [gripWidth, archStyle] = variant.split("-");
+      return solveBenchKinematics(
+        anthropometry,
+        gripWidth as "narrow" | "medium" | "wide",
+        archStyle as "flat" | "moderate" | "competitive" | "extreme"
+      );
+
+    case LiftFamily.PULLUP:
+      return solvePullupKinematics(
+        anthropometry,
+        variant as "supinated" | "neutral" | "pronated"
+      );
+
+    case LiftFamily.OHP:
+      return solveOHPKinematics(anthropometry);
+
+    case LiftFamily.THRUSTER:
+      return solveThrusterKinematics(anthropometry);
+
+    case LiftFamily.PUSHUP:
+      return solvePushupKinematics(anthropometry);
+
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Compares two lifters performing the same lift family
  *
  * @param lifterA - First lifter with their performance
@@ -89,6 +184,13 @@ function calculateLiftMetrics(
  * @param variantA - Variant for lifter A
  * @param variantB - Variant for lifter B
  * @param performanceA - Lifter A's load and reps
+ * @param performanceB - Lifter B's load and reps (optional, defaults to performanceA)
+ * @param stanceA - Stance for lifter A (optional)
+ * @param stanceB - Stance for lifter B (optional)
+ * @param pushupWeightA - Pushup weight for lifter A (optional)
+ * @param pushupWeightB - Pushup weight for lifter B (optional)
+ * @param barStartHeightOffsetA - Bar elevation offset for lifter A in meters (optional, deadlift only)
+ * @param barStartHeightOffsetB - Bar elevation offset for lifter B in meters (optional, deadlift only)
  * @returns Complete comparison result with equivalent loads and explanations
  */
 export function compareLifts(
@@ -97,48 +199,104 @@ export function compareLifts(
   liftFamily: LiftFamily,
   variantA: string,
   variantB: string,
-  performanceA: { load: number; reps: number }
+  performanceA: { load: number; reps: number },
+  performanceB?: { load: number; reps: number },
+  stanceA?: string,
+  stanceB?: string,
+  pushupWeightA?: number,
+  pushupWeightB?: number,
+  barStartHeightOffsetA?: number,
+  barStartHeightOffsetB?: number
 ): ComparisonResult {
+  // If performanceB not provided, use performanceA (legacy behavior for same performance)
+  const perfB = performanceB ?? performanceA;
+
   // Step 1: Compute metrics for Lifter A
   const metricsA = calculateLiftMetrics(
     lifterA.anthropometry,
     liftFamily,
     variantA,
     performanceA.load,
-    performanceA.reps
+    performanceA.reps,
+    stanceA,
+    pushupWeightA,
+    barStartHeightOffsetA
   );
 
-  // Step 2: Compute metrics for Lifter B with SAME load and reps as Lifter A
+  // Step 2: Compute metrics for Lifter B with THEIR OWN load and reps
   const metricsB = calculateLiftMetrics(
     lifterB.anthropometry,
     liftFamily,
     variantB,
-    performanceA.load,
-    performanceA.reps
+    perfB.load,
+    perfB.reps,
+    stanceB,
+    pushupWeightB,
+    barStartHeightOffsetB
   );
 
-  // Step 3: Calculate demand factors (using 1 rep to get pure demand)
+  // Step 3: Calculate demand factors with load to get pure biomechanical demand
   const metricsA_1rep = calculateLiftMetrics(
     lifterA.anthropometry,
     liftFamily,
     variantA,
     performanceA.load,
-    1
+    1,
+    stanceA,
+    pushupWeightA,
+    barStartHeightOffsetA
   );
   const metricsB_1rep = calculateLiftMetrics(
     lifterB.anthropometry,
     liftFamily,
     variantB,
-    performanceA.load,
-    1
+    perfB.load,
+    1,
+    stanceB,
+    pushupWeightB,
+    barStartHeightOffsetB
   );
 
-  const demandA = metricsA_1rep.demandFactor;
-  const demandB = metricsB_1rep.demandFactor;
+  // Calculate bodyweight-only demand to capture body mass differences
+  const metricsA_bw = calculateLiftMetrics(
+    lifterA.anthropometry,
+    liftFamily,
+    variantA,
+    0,
+    1,
+    stanceA,
+    0, // No pushup weight for baseline
+    barStartHeightOffsetA
+  );
+  const metricsB_bw = calculateLiftMetrics(
+    lifterB.anthropometry,
+    liftFamily,
+    variantB,
+    0,
+    1,
+    stanceB,
+    0, // No pushup weight for baseline
+    barStartHeightOffsetB
+  );
+
+  // Geometric demand factor (shape/leverage)
+  const geometricDemandA = metricsA_1rep.demandFactor;
+  const geometricDemandB = metricsB_1rep.demandFactor;
+
+  // Bodyweight demand factor (body mass effects)
+  const bodyweightDemandA = metricsA_bw.workPerRep;
+  const bodyweightDemandB = metricsB_bw.workPerRep;
+
+  // Combined demand includes both geometric and body mass factors
+  const demandA = geometricDemandA;
+  const demandB = geometricDemandB;
+
+  // Body mass ratio to scale equivalent load
+  const bodyMassRatio = bodyweightDemandA / bodyweightDemandB;
 
   // Step 4: Solve for equivalent load (what load would Lifter B need for same demand)
-  // Load_B = Load_A × (demandA / demandB)
-  const equivalentLoad = performanceA.load * (demandA / demandB);
+  // Account for both geometric differences and body mass differences
+  const equivalentLoad = performanceA.load * (demandA / demandB) * bodyMassRatio;
 
   // Step 5: Solve for equivalent reps
   // Reps needed for Lifter B to match Lifter A's total work at the same load
@@ -175,30 +333,79 @@ export function compareLifts(
     }
   );
 
+  // Calculate capacity-adjusted comparison for squats with different variants
+  let capacityAdjusted: ComparisonResult["capacityAdjusted"] = undefined;
+
+  if (liftFamily === LiftFamily.SQUAT && variantA !== variantB) {
+    // Get capacity factors for each variant
+    const factorA = SQUAT_VARIANT_LOAD_CAPACITY_FACTORS[
+      variantA as keyof typeof SQUAT_VARIANT_LOAD_CAPACITY_FACTORS
+    ] ?? 1.0;
+    const factorB = SQUAT_VARIANT_LOAD_CAPACITY_FACTORS[
+      variantB as keyof typeof SQUAT_VARIANT_LOAD_CAPACITY_FACTORS
+    ] ?? 1.0;
+
+    // Normalize loads by capacity factor to get "difficulty-equivalent" loads
+    // If low bar has 1.075 capacity, then 100kg on low bar = 100/1.075 = 93kg difficulty
+    const adjustedLoadA = performanceA.load / factorA;
+    const adjustedLoadB = performanceA.load / factorB;
+
+    // Recalculate demand ratio with adjusted loads
+    // Higher capacity factor = lower adjusted load = performed easier lift
+    const adjustedDemandRatio = demandRatio * (factorB / factorA);
+    const adjustedAdvantagePercentage = (adjustedDemandRatio - 1) * 100;
+
+    let adjustedAdvantageDirection: "advantage_A" | "advantage_B" | "neutral";
+    if (Math.abs(adjustedAdvantagePercentage) < 1) {
+      adjustedAdvantageDirection = "neutral";
+    } else if (adjustedDemandRatio < 1) {
+      adjustedAdvantageDirection = "advantage_B";
+    } else {
+      adjustedAdvantageDirection = "advantage_A";
+    }
+
+    // Generate explanation
+    let explanation = "";
+    if (factorA !== factorB) {
+      const higherCapacityLifter = factorA > factorB ? "A" : "B";
+      const higherCapacityVariant = factorA > factorB ? variantA : variantB;
+      const capacityDiffPercent = Math.abs((factorA - factorB) / Math.min(factorA, factorB) * 100);
+
+      explanation = `Research shows ${higherCapacityVariant} squat allows ~${capacityDiffPercent.toFixed(1)}% greater load capacity due to reduced knee moment arm and stronger hip extensor recruitment. When accounting for this, Lifter ${higherCapacityLifter}'s ${performanceA.load}kg lift is equivalent to ${adjustedLoadA > adjustedLoadB ? adjustedLoadA.toFixed(1) : adjustedLoadB.toFixed(1)}kg in difficulty, making the comparison more favorable to the lifter using the variant with lower capacity.`;
+    }
+
+    capacityAdjusted = {
+      lifterACapacityFactor: factorA,
+      lifterBCapacityFactor: factorB,
+      adjustedLoadA,
+      adjustedLoadB,
+      adjustedDemandRatio,
+      adjustedAdvantagePercentage,
+      adjustedAdvantageDirection,
+      explanation,
+    };
+  }
+
+  // Get kinematics only for squats (for animation)
+  const kinematicsA = liftFamily === LiftFamily.SQUAT
+    ? getKinematics(lifterA.anthropometry, liftFamily, variantA, stanceA)
+    : undefined;
+  const kinematicsB = liftFamily === LiftFamily.SQUAT
+    ? getKinematics(lifterB.anthropometry, liftFamily, variantB, stanceB)
+    : undefined;
+
   return {
     lifterA: {
       name: lifterA.name ?? "Lifter A",
       anthropometry: lifterA.anthropometry,
       metrics: metricsA,
-      kinematics:
-        liftFamily === LiftFamily.SQUAT
-          ? solveSquatKinematics(
-              lifterA.anthropometry,
-              variantA as SquatVariant | "highBar" | "lowBar" | "front"
-            )
-          : undefined,
+      kinematics: kinematicsA,
     },
     lifterB: {
       name: lifterB.name ?? "Lifter B",
       anthropometry: lifterB.anthropometry,
       metrics: metricsB,
-      kinematics:
-        liftFamily === LiftFamily.SQUAT
-          ? solveSquatKinematics(
-              lifterB.anthropometry,
-              variantB as SquatVariant | "highBar" | "lowBar" | "front"
-            )
-          : undefined,
+      kinematics: kinematicsB,
       equivalentLoad,
       equivalentReps,
     },
@@ -209,6 +416,7 @@ export function compareLifts(
       advantagePercentage,
       advantageDirection,
     },
+    capacityAdjusted,
     explanations,
   };
 }
@@ -364,11 +572,13 @@ export function compareCrossLift(
   liftFamily: LiftFamily,
   variantA: string,
   variantB: string,
-  load: number
+  load: number,
+  stanceA?: string,
+  stanceB?: string
 ): { conversionFactor: number; equivalentLoad: number } {
   // Calculate metrics for both variants
-  const metricsA = calculateLiftMetrics(anthropometry, liftFamily, variantA, load, 1);
-  const metricsB = calculateLiftMetrics(anthropometry, liftFamily, variantB, 0, 1);
+  const metricsA = calculateLiftMetrics(anthropometry, liftFamily, variantA, load, 1, stanceA);
+  const metricsB = calculateLiftMetrics(anthropometry, liftFamily, variantB, 0, 1, stanceB);
 
   // Calculate conversion factor based on demand
   const conversionFactor = metricsA.demandFactor / metricsB.demandFactor;

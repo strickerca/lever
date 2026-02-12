@@ -1,0 +1,19 @@
+=== Leverage Investigation Script ===
+
+--- Lifter A (Control) ---
+Height: 1.75m, Ratio: average
+Segments A: Femur=0.4560, Torso=0.5360, Tibia=0.4579
+Femur/Torso Ratio A: 0.851
+Squat Kinematics A: Valid=true, HipMoment=0.2271m, Disp=0.6334m, Trunk=27.6deg
+
+--- Lifter B (Disadvantaged) ---
+Height: 1.85m, Ratio: veryLongLegs
+Segments B: Femur=0.5510, Torso=0.4936, Tibia=0.4876
+Femur/Torso Ratio B: 1.116
+Squat Kinematics B: Valid=true, HipMoment=0.3072m, Disp=0.7860m, Trunk=39.5deg
+
+--- Comparison ---
+Moment Arm Ratio (B/A): 1.35x
+ROM Ratio (B/A): 1.24x
+Total Demand Multiplier: 1.68x
+Approx % Harder: 67.9%

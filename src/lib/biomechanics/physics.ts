@@ -7,7 +7,9 @@ import {
   LiftMetrics,
   PullupGrip,
   Sex,
+  SquatStance,
   SquatVariant,
+  SumoStance,
 } from "../../types";
 import {
   ALLOMETRIC_EXPONENT,
@@ -20,6 +22,7 @@ import {
   MIN_BENCH_DISPLACEMENT,
   STANDARD_PLATE_RADIUS,
   SUMO_ROM_FACTOR,
+  SUMO_STANCE_MODIFIERS,
 } from "./constants";
 import { solveSquatKinematics, toRadians } from "./kinematics";
 
@@ -76,16 +79,18 @@ export function calculateEffectiveMass(
  * @param variant - Squat variant (highBar, lowBar, front)
  * @param load - External load in kg
  * @param reps - Number of repetitions
+ * @param stance - Stance width (optional, defaults to normal)
  * @returns Complete lift metrics including work, demand, and P4P score
  */
 export function calculateSquatWork(
   anthropometry: Anthropometry,
   variant: SquatVariant | "highBar" | "lowBar" | "front",
   load: number,
-  reps: number
+  reps: number,
+  stance: SquatStance | "narrow" | "normal" | "wide" | "ultraWide" = "normal"
 ): LiftMetrics {
   // Solve kinematics to get displacement and moment arms
-  const kinematics = solveSquatKinematics(anthropometry, variant);
+  const kinematics = solveSquatKinematics(anthropometry, variant, stance);
 
   // Calculate effective mass
   const M_eff = calculateEffectiveMass(
@@ -121,22 +126,50 @@ export function calculateSquatWork(
  *
  * @param anthropometry - Lifter's anthropometric profile
  * @param variant - Deadlift variant (conventional or sumo)
+ * @param stance - Stance width for sumo (optional, defaults to normal)
+ * @param barStartHeightOffset - Bar elevation offset in meters (default: 0)
+ *   - NEGATIVE values = DEFICIT deadlifts (bar starts LOWER than standard floor)
+ *     Example: -0.05 = 5cm deficit (standing on platform)
+ *   - POSITIVE values = BLOCK PULLS (bar starts HIGHER than standard floor)
+ *     Example: +0.10 = 10cm blocks (bar elevated on blocks/rack)
+ *   - Zero = standard floor pull (bar at standard plate radius ~0.225m)
+ *
+ *   Effect on ROM:
+ *   - Deficits INCREASE displacement (more work, harder)
+ *   - Blocks DECREASE displacement (less work, easier)
  * @returns Displacement in meters
  */
 export function calculateDeadliftDisplacement(
   anthropometry: Anthropometry,
-  variant: DeadliftVariant | "conventional" | "sumo"
+  variant: DeadliftVariant | "conventional" | "sumo",
+  stance: SumoStance | "hybrid" | "normal" | "wide" | "ultraWide" = "normal",
+  barStartHeightOffset: number = 0
 ): number {
-  // Conventional: from floor to lockout
-  // acromionHeight - totalArm - plateRadius
-  const conventional =
+  // Bar start height: standard plate radius (~0.225m) + offset
+  //
+  // Sign convention (IMPORTANT):
+  //   offset < 0 → DEFICIT deadlift (standing on platform, bar LOWER)
+  //   offset = 0 → STANDARD floor pull (45lb plate height)
+  //   offset > 0 → BLOCK PULL (bar elevated on blocks/rack, HIGHER)
+  //
+  // Example values:
+  //   -0.05 = 5cm deficit (2 inch deficit)
+  //   +0.10 = 10cm blocks (4 inch blocks)
+  const barStartHeight = STANDARD_PLATE_RADIUS + barStartHeightOffset;
+
+  // Lockout height: acromionHeight - totalArm
+  // (bar is at roughly hip level with arms extended)
+  const lockoutHeight =
     anthropometry.derived.acromionHeight -
-    anthropometry.derived.totalArm -
-    STANDARD_PLATE_RADIUS;
+    anthropometry.derived.totalArm;
+
+  // Conventional displacement: from start to lockout
+  const conventional = lockoutHeight - barStartHeight;
 
   if (variant === "sumo") {
-    // Sumo has 15-20% less ROM
-    return conventional * SUMO_ROM_FACTOR;
+    // Sumo has reduced ROM based on stance width
+    const stanceModifiers = SUMO_STANCE_MODIFIERS[stance as keyof typeof SUMO_STANCE_MODIFIERS];
+    return conventional * stanceModifiers.romMultiplier;
   }
 
   return conventional;
@@ -149,15 +182,26 @@ export function calculateDeadliftDisplacement(
  * @param variant - Deadlift variant (conventional or sumo)
  * @param load - External load in kg
  * @param reps - Number of repetitions
+ * @param stance - Stance width for sumo (optional, defaults to normal)
+ * @param barStartHeightOffset - Bar elevation offset in meters (default: 0)
+ *   - NEGATIVE = deficit (bar lower), POSITIVE = blocks (bar higher)
+ *   - See calculateDeadliftDisplacement() for detailed documentation
  * @returns Complete lift metrics
  */
 export function calculateDeadliftWork(
   anthropometry: Anthropometry,
   variant: DeadliftVariant | "conventional" | "sumo",
   load: number,
-  reps: number
+  reps: number,
+  stance: SumoStance | "hybrid" | "normal" | "wide" | "ultraWide" = "normal",
+  barStartHeightOffset: number = 0
 ): LiftMetrics {
-  const displacement = calculateDeadliftDisplacement(anthropometry, variant);
+  const displacement = calculateDeadliftDisplacement(
+    anthropometry,
+    variant,
+    stance,
+    barStartHeightOffset
+  );
 
   const M_eff = calculateEffectiveMass(
     load,
@@ -328,17 +372,19 @@ export function calculatePullupWork(
  *
  * @param anthropometry - Lifter's anthropometric profile
  * @param reps - Number of repetitions
+ * @param addedWeight - Optional added weight in kg (placed over middle back)
  * @returns Complete lift metrics
  */
 export function calculatePushupWork(
   anthropometry: Anthropometry,
-  reps: number
+  reps: number,
+  addedWeight: number = 0
 ): LiftMetrics {
   // Displacement is upperArm + forearm
   const displacement = anthropometry.segments.upperArm + anthropometry.segments.forearm;
 
   const M_eff = calculateEffectiveMass(
-    0, // no external load
+    addedWeight, // added weight acts as external load
     anthropometry.mass,
     LiftFamily.PUSHUP,
     anthropometry.sex

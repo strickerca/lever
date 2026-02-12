@@ -5,10 +5,12 @@ import Link from "next/link";
 import { ArrowLeft, AlertCircle } from "lucide-react";
 import { LiftFamily, Sex, ComparisonResult, AnthropometryMode } from "@/types";
 import { HeightWeightInput } from "@/components/anthropometry/HeightWeightInput";
+import { SegmentInput } from "@/components/anthropometry/SegmentInput";
 import { LiftSelector } from "@/components/comparison/LiftSelector";
 import { ResultsDisplay } from "@/components/comparison/ResultsDisplay";
 import { ExplanationCards } from "@/components/comparison/ExplanationCards";
-import { StickFigure } from "@/components/visualization/StickFigure";
+import { UnifiedMovementAnimation } from "@/components/visualization/UnifiedMovementAnimation";
+import { ComparisonModeSelector } from "@/components/comparison/ComparisonModeSelector";
 import { ResultsSkeleton, StickFigureSkeleton } from "@/components/ui/Skeleton";
 import { showToast, ToastContainer } from "@/components/ui/Toast";
 import { createAdvancedProfile } from "@/lib/biomechanics/anthropometry";
@@ -56,16 +58,86 @@ export default function DetailedComparePage() {
     variant: "highBar",
     load: 100,
     reps: 5,
+    stance: "normal",
+    pushupWeight: 0,
   });
 
   const [liftDataB, setLiftDataB] = useState({
     liftFamily: LiftFamily.SQUAT,
     variant: "highBar",
+    load: 100,
+    reps: 5,
+    stance: "normal",
+    pushupWeight: 0,
   });
 
   const [result, setResult] = useState<ComparisonResult | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Handler for centralized lift family change
+  const handleLiftFamilyChange = (newFamily: LiftFamily) => {
+    // Update both lifters with the new lift family and reset variants
+    // Each lift family has its own default variant format
+    const defaultVariant =
+      newFamily === LiftFamily.SQUAT ? "highBar" :
+      newFamily === LiftFamily.DEADLIFT ? "conventional" :
+      newFamily === LiftFamily.BENCH ? "medium-moderate" :
+      newFamily === LiftFamily.PULLUP ? "pronated" :
+      newFamily === LiftFamily.PUSHUP ? "standard" :
+      newFamily === LiftFamily.OHP ? "standard" :
+      newFamily === LiftFamily.THRUSTER ? "standard" :
+      "standard";
+
+    setLiftDataA({
+      ...liftDataA,
+      liftFamily: newFamily,
+      variant: defaultVariant,
+      stance: "normal",
+      pushupWeight: 0,
+    });
+
+    setLiftDataB({
+      ...liftDataB,
+      liftFamily: newFamily,
+      variant: defaultVariant,
+      stance: "normal",
+      pushupWeight: 0,
+    });
+  };
+
+  const handleLiftDataAChange = (data: {
+    liftFamily: LiftFamily;
+    variant: string;
+    load: number;
+    reps: number;
+    stance?: string;
+    pushupWeight?: number;
+  }) => {
+    setLiftDataA({
+      ...data,
+      stance: data.stance ?? "normal",
+      pushupWeight: data.pushupWeight ?? 0,
+    });
+  };
+
+  const handleLiftDataBChange = (data: {
+    liftFamily: LiftFamily;
+    variant: string;
+    load: number;
+    reps: number;
+    stance?: string;
+    pushupWeight?: number;
+  }) => {
+    setLiftDataB({
+      liftFamily: data.liftFamily,
+      variant: data.variant,
+      load: data.load,
+      reps: data.reps,
+      stance: data.stance ?? "normal",
+      pushupWeight: data.pushupWeight ?? 0,
+    });
+  };
 
   const handleCompare = () => {
     // Validate inputs
@@ -79,16 +151,22 @@ export default function DetailedComparePage() {
       lifterB.weight,
       lifterB.sex
     );
-    const liftValidation = validateLiftInputs(
+    const liftValidationA = validateLiftInputs(
       liftDataA.load,
       liftDataA.reps,
       liftDataA.liftFamily !== LiftFamily.PUSHUP
+    );
+    const liftValidationB = validateLiftInputs(
+      liftDataB.load,
+      liftDataB.reps,
+      liftDataB.liftFamily !== LiftFamily.PUSHUP
     );
 
     const errors = [
       ...lifterAValidation.errors,
       ...lifterBValidation.errors,
-      ...liftValidation.errors,
+      ...liftValidationA.errors,
+      ...liftValidationB.errors,
     ];
 
     if (errors.length > 0) {
@@ -103,16 +181,15 @@ export default function DetailedComparePage() {
     setTimeout(() => {
       try {
         // Create anthropometry profiles with SD modifiers
+        // Map individual segment modifiers to grouped modifiers
         const anthroA = createAdvancedProfile(
           lifterA.height,
           lifterA.weight,
           lifterA.sex,
           {
             torso: lifterA.sdTorso,
-            upperArm: lifterA.sdUpperArm,
-            forearm: lifterA.sdForearm,
-            femur: lifterA.sdFemur,
-            tibia: lifterA.sdTibia,
+            arms: (lifterA.sdUpperArm + lifterA.sdForearm) / 2,
+            legs: (lifterA.sdFemur + lifterA.sdTibia) / 2,
           }
         );
         const anthroB = createAdvancedProfile(
@@ -121,21 +198,24 @@ export default function DetailedComparePage() {
           lifterB.sex,
           {
             torso: lifterB.sdTorso,
-            upperArm: lifterB.sdUpperArm,
-            forearm: lifterB.sdForearm,
-            femur: lifterB.sdFemur,
-            tibia: lifterB.sdTibia,
+            arms: (lifterB.sdUpperArm + lifterB.sdForearm) / 2,
+            legs: (lifterB.sdFemur + lifterB.sdTibia) / 2,
           }
         );
 
-        // Compare lifts (can be different variants)
+        // Compare lifts (can be different variants, stances, loads, and reps)
         const comparisonResult = compareLifts(
           { anthropometry: anthroA, name: lifterA.name },
           { anthropometry: anthroB, name: lifterB.name },
           liftDataA.liftFamily,
           liftDataA.variant,
           liftDataB.variant,
-          { load: liftDataA.load, reps: liftDataA.reps }
+          { load: liftDataA.load, reps: liftDataA.reps },
+          { load: liftDataB.load, reps: liftDataB.reps },
+          liftDataA.stance,
+          liftDataB.stance,
+          liftDataA.pushupWeight,
+          liftDataB.pushupWeight
         );
 
         setResult(comparisonResult);
@@ -161,30 +241,10 @@ export default function DetailedComparePage() {
     <div className="min-h-screen bg-gray-50">
       <ToastContainer />
 
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <Link
-            href="/compare/quick"
-            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Back to Quick Compare</span>
-            <span className="sm:hidden">Back</span>
-          </Link>
-        </div>
-      </div>
+      {/* Comparison Mode Selector */}
+      <ComparisonModeSelector currentMode="detailed" />
 
       <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8">
-        {/* Page Title */}
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            Detailed Comparison
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600">
-            Advanced comparison with SD modifiers and cross-lift variants
-          </p>
-        </div>
 
         {/* Validation Errors */}
         {validationErrors.length > 0 && (
@@ -205,13 +265,38 @@ export default function DetailedComparePage() {
           </div>
         )}
 
+        {/* Centralized Lift Type Selector */}
+        <div className="max-w-md mx-auto mb-8">
+          <div className="bg-gradient-to-r from-blue-50 to-orange-50 rounded-lg shadow-sm p-6 border-2 border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Lift Type
+            </label>
+            <select
+              value={liftDataA.liftFamily}
+              onChange={(e) => handleLiftFamilyChange(e.target.value as LiftFamily)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+            >
+              <option value={LiftFamily.SQUAT}>Squat</option>
+              <option value={LiftFamily.DEADLIFT}>Deadlift</option>
+              <option value={LiftFamily.BENCH}>Bench Press</option>
+              <option value={LiftFamily.PULLUP}>Pull-up / Chin-up</option>
+              <option value={LiftFamily.PUSHUP}>Push-up</option>
+              <option value={LiftFamily.OHP}>Overhead Press</option>
+              <option value={LiftFamily.THRUSTER}>Thruster</option>
+            </select>
+            <p className="mt-2 text-xs text-gray-600 text-center">
+              This applies to both lifters
+            </p>
+          </div>
+        </div>
+
         {/* Input Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Lifter A */}
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-blue-200">
               <h2 className="text-xl font-semibold text-blue-600 mb-4">
-                Lifter A
+                Lifter A Build
               </h2>
               <HeightWeightInput
                 height={lifterA.height}
@@ -221,46 +306,18 @@ export default function DetailedComparePage() {
               />
             </div>
 
-            {/* SD Modifiers for A */}
-            <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-blue-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Segment Length Modifiers (SD)
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Adjust individual segment lengths. 0 = average, +1 = 1 standard deviation longer, -1 = 1 SD shorter
-              </p>
-              <div className="space-y-4">
-                {[
-                  { key: "sdTorso" as const, label: "Torso" },
-                  { key: "sdUpperArm" as const, label: "Upper Arm" },
-                  { key: "sdForearm" as const, label: "Forearm" },
-                  { key: "sdFemur" as const, label: "Femur" },
-                  { key: "sdTibia" as const, label: "Tibia" },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        {label}
-                      </label>
-                      <span className="text-sm text-gray-600">
-                        {lifterA[key].toFixed(1)} SD
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-2"
-                      max="2"
-                      step="0.1"
-                      value={lifterA[key]}
-                      onChange={(e) =>
-                        setLifterA({ ...lifterA, [key]: parseFloat(e.target.value) })
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Segment Length Input for A */}
+            <SegmentInput
+              height={lifterA.height}
+              sex={lifterA.sex}
+              sdTorso={lifterA.sdTorso}
+              sdUpperArm={lifterA.sdUpperArm}
+              sdForearm={lifterA.sdForearm}
+              sdFemur={lifterA.sdFemur}
+              sdTibia={lifterA.sdTibia}
+              onChange={(data) => setLifterA({ ...lifterA, ...data })}
+              color="blue"
+            />
 
             {/* Lift Details for A */}
             <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-blue-200">
@@ -272,7 +329,10 @@ export default function DetailedComparePage() {
                 variant={liftDataA.variant}
                 load={liftDataA.load}
                 reps={liftDataA.reps}
-                onChange={setLiftDataA}
+                stance={liftDataA.stance}
+                pushupWeight={liftDataA.pushupWeight}
+                onChange={handleLiftDataAChange}
+                showLiftType={false}
               />
             </div>
           </div>
@@ -281,7 +341,7 @@ export default function DetailedComparePage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-orange-200">
               <h2 className="text-xl font-semibold text-orange-600 mb-4">
-                Lifter B
+                Lifter B Build
               </h2>
               <HeightWeightInput
                 height={lifterB.height}
@@ -291,62 +351,33 @@ export default function DetailedComparePage() {
               />
             </div>
 
-            {/* SD Modifiers for B */}
-            <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-orange-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Segment Length Modifiers (SD)
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Adjust individual segment lengths. 0 = average, +1 = 1 standard deviation longer, -1 = 1 SD shorter
-              </p>
-              <div className="space-y-4">
-                {[
-                  { key: "sdTorso" as const, label: "Torso" },
-                  { key: "sdUpperArm" as const, label: "Upper Arm" },
-                  { key: "sdForearm" as const, label: "Forearm" },
-                  { key: "sdFemur" as const, label: "Femur" },
-                  { key: "sdTibia" as const, label: "Tibia" },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        {label}
-                      </label>
-                      <span className="text-sm text-gray-600">
-                        {lifterB[key].toFixed(1)} SD
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-2"
-                      max="2"
-                      step="0.1"
-                      value={lifterB[key]}
-                      onChange={(e) =>
-                        setLifterB({ ...lifterB, [key]: parseFloat(e.target.value) })
-                      }
-                      className="w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Segment Length Input for B */}
+            <SegmentInput
+              height={lifterB.height}
+              sex={lifterB.sex}
+              sdTorso={lifterB.sdTorso}
+              sdUpperArm={lifterB.sdUpperArm}
+              sdForearm={lifterB.sdForearm}
+              sdFemur={lifterB.sdFemur}
+              sdTibia={lifterB.sdTibia}
+              onChange={(data) => setLifterB({ ...lifterB, ...data })}
+              color="orange"
+            />
 
-            {/* Lift Variant for B */}
+            {/* Lift Details for B */}
             <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-orange-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Lifter B Variant
+                Lifter B Performance
               </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Select variant for Lifter B (can be different from Lifter A)
-              </p>
               <LiftSelector
                 liftFamily={liftDataA.liftFamily}
                 variant={liftDataB.variant}
-                load={liftDataA.load}
-                reps={liftDataA.reps}
-                onChange={(data) => setLiftDataB({ ...liftDataB, variant: data.variant })}
-                showLoadReps={false}
+                load={liftDataB.load}
+                reps={liftDataB.reps}
+                stance={liftDataB.stance}
+                pushupWeight={liftDataB.pushupWeight}
+                onChange={handleLiftDataBChange}
+                showLiftType={false}
               />
             </div>
           </div>
@@ -374,19 +405,43 @@ export default function DetailedComparePage() {
         {/* Results Section */}
         {!isComparing && result && (
           <div id="results" className="space-y-8">
-            {/* Stick Figure */}
+            {/* Animated Movement Comparison with Controls */}
             {result.lifterA.kinematics && result.lifterB.kinematics && (
-              <StickFigure
-                kinematicsA={result.lifterA.kinematics}
-                kinematicsB={result.lifterB.kinematics}
-                heightA={lifterA.height}
-                heightB={lifterB.height}
-                showMomentArms={true}
+              <UnifiedMovementAnimation
+                lifterA={{
+                  name: lifterA.name,
+                  anthropometry: result.lifterA.anthropometry,
+                }}
+                lifterB={{
+                  name: lifterB.name,
+                  anthropometry: result.lifterB.anthropometry,
+                }}
+                movement={liftDataA.liftFamily}
+                options={{
+                  squatVariant: liftDataA.liftFamily === LiftFamily.SQUAT ? liftDataA.variant as any : undefined,
+                  squatStance: liftDataA.liftFamily === LiftFamily.SQUAT ? liftDataA.stance as any : undefined,
+                  deadliftVariant: liftDataA.liftFamily === LiftFamily.DEADLIFT ? liftDataA.variant as any : undefined,
+                  sumoStance: liftDataA.liftFamily === LiftFamily.DEADLIFT ? liftDataA.stance as any : undefined,
+                  benchGrip: liftDataA.liftFamily === LiftFamily.BENCH ? liftDataA.variant.split('-')[0] as any : undefined,
+                  benchArch: liftDataA.liftFamily === LiftFamily.BENCH ? liftDataA.variant.split('-')[1] as any : undefined,
+                  pullupGrip: liftDataA.liftFamily === LiftFamily.PULLUP ? liftDataA.variant as any : undefined,
+                  pushupWidth: liftDataA.liftFamily === LiftFamily.PUSHUP ? liftDataA.variant as any : undefined,
+                  pushupWeight: liftDataA.liftFamily === LiftFamily.PUSHUP ? liftDataA.pushupWeight : undefined,
+                }}
+                reps={liftDataA.reps}
+                workA={result.lifterA.metrics.totalWork}
+                workB={result.lifterB.metrics?.totalWork || 0}
+                initialTime={liftDataA.reps * 2.5}
               />
             )}
 
-            {/* Results Display */}
-            <ResultsDisplay result={result} />
+            {/* Biomechanical Analysis */}
+            <ResultsDisplay
+              result={result}
+              showEquivalentPerformance={false}
+              liftFamily={liftDataA.liftFamily}
+              variant={liftDataA.variant}
+            />
 
             {/* Explanations */}
             <div className="bg-white rounded-lg shadow-sm p-6">

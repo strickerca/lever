@@ -108,6 +108,61 @@ export function createAdvancedProfile(
 }
 
 /**
+ * Creates an anthropometry profile from simplified segment proportion options
+ * @param height - Standing height in meters
+ * @param mass - Body mass in kilograms
+ * @param sex - Biological sex
+ * @param torsoSD - Torso length modifier (-2 to +2)
+ * @param armSD - Arm length modifier (-2 to +2)
+ * @param legSD - Leg length modifier (-2 to +2)
+ * @returns Complete anthropometry profile with custom proportions
+ */
+export function createProfileFromProportions(
+  height: number,
+  mass: number,
+  sex: Sex,
+  torsoSD: number,
+  armSD: number,
+  legSD: number
+): Anthropometry {
+  const ratios = SEGMENT_RATIOS[sex];
+
+  // Calculate multipliers using formula: 1 + (SD × 0.045)
+  const armMultiplier = 1 + armSD * SD_MULTIPLIER_COEFFICIENT;
+  const legMultiplier = 1 + legSD * SD_MULTIPLIER_COEFFICIENT;
+  const torsoMultiplier = 1 + torsoSD * SD_MULTIPLIER_COEFFICIENT;
+
+  // Apply ratios with modifiers
+  // For arms and legs, apply the same multiplier to all sub-segments to maintain proportionality
+  let segments: SegmentLengths = {
+    height,
+    headNeck: height * ratios.headNeck, // Head/neck not modified
+    torso: height * ratios.torso * torsoMultiplier,
+    upperArm: height * ratios.upperArm * armMultiplier,
+    forearm: height * ratios.forearm * armMultiplier,
+    hand: height * ratios.hand * armMultiplier,
+    femur: height * ratios.femur * legMultiplier,
+    tibia: height * ratios.tibia * legMultiplier,
+    footHeight: height * ratios.footHeight * legMultiplier,
+  };
+
+  // Normalize to ensure segments sum to target height
+  segments = normalizeToHeight(segments, height);
+
+  // Compute derived anthropometry
+  const derived = computeDerivedAnthropometry(segments, height);
+
+  return {
+    mode: AnthropometryMode.SIMPLE, // Use simple mode since this is for quick comparison
+    sex,
+    mass,
+    segments,
+    derived,
+    mobility: { ...DEFAULT_MOBILITY },
+  };
+}
+
+/**
  * Normalizes segment lengths to sum to target height
  * Keeps headNeck fixed and scales other segments proportionally
  * @param segments - Current segment lengths
@@ -185,20 +240,20 @@ export function validateAnthropometry(profile: Anthropometry): {
 } {
   const errors: string[] = [];
 
-  // Check height bounds (1.4m to 2.2m)
-  if (profile.segments.height < 1.4) {
-    errors.push("Height is below minimum (1.4m)");
+  // Check height bounds (0.5m to 10m - extended for fun comparisons)
+  if (profile.segments.height < 0.5) {
+    errors.push("Height is below minimum (0.5m)");
   }
-  if (profile.segments.height > 2.2) {
-    errors.push("Height exceeds maximum (2.2m)");
+  if (profile.segments.height > 10) {
+    errors.push("Height exceeds maximum (10m)");
   }
 
-  // Check mass bounds (40kg to 200kg)
-  if (profile.mass < 40) {
-    errors.push("Mass is below minimum (40kg)");
+  // Check mass bounds (10kg to 1000kg - extended for fun comparisons)
+  if (profile.mass < 10) {
+    errors.push("Mass is below minimum (10kg)");
   }
-  if (profile.mass > 200) {
-    errors.push("Mass exceeds maximum (200kg)");
+  if (profile.mass > 1000) {
+    errors.push("Mass exceeds maximum (1000kg)");
   }
 
   // Check segments sum to height (within 6% tolerance)

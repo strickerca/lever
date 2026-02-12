@@ -39,3 +39,34 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Workspace files (personal IDE settings)
+*.code-workspace
+
+# Investigation scripts and artifacts
+audit-artifacts/
+src/scripts/investigate_*.ts
+
+# Experimental/Backup Component Versions
+*.bak
+src/components/anthropometry/ManualSegmentLengths.tsx
+src/components/anthropometry/ProportionVisualizer.tsx
+src/components/ui/AnthropometryDropdown.tsx
+src/components/visualization/ForceVelocitySlider.tsx
+src/components/visualization/LifterPanel.tsx
+src/components/visualization/VelocityGauge.tsx
+
+# Exploratory Test Files
+src/lib/animation/__tests__/deadlift-pose-robustness.test.ts
+src/lib/animation/__tests__/deadlift-visualizer-extremes.test.ts
+src/lib/animation/__tests__/leverageVelocity.test.ts
+src/lib/biomechanics/__tests__/verification_audit.test.ts
+
+# Debug Screenshots
+*.png
+*.jpg
+!public/**/*.png
+!public/**/*.jpg
+
+# Build Caches
+.npm-cache/

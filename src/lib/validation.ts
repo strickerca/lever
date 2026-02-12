@@ -14,11 +14,11 @@ export function validateHeight(height: number): ValidationError | null {
   if (isNaN(height) || height <= 0) {
     return { field: "height", message: "Height must be a positive number" };
   }
-  if (height < 1.4) {
-    return { field: "height", message: "Height must be at least 1.4m (4'7\")" };
+  if (height < 0.5) {
+    return { field: "height", message: "Height must be at least 0.5m (1'8\")" };
   }
-  if (height > 2.2) {
-    return { field: "height", message: "Height must be at most 2.2m (7'3\")" };
+  if (height > 10) {
+    return { field: "height", message: "Height must be at most 10m (32'10\")" };
   }
   return null;
 }
@@ -27,11 +27,11 @@ export function validateWeight(weight: number): ValidationError | null {
   if (isNaN(weight) || weight <= 0) {
     return { field: "weight", message: "Weight must be a positive number" };
   }
-  if (weight < 40) {
-    return { field: "weight", message: "Weight must be at least 40kg (88 lbs)" };
+  if (weight < 10) {
+    return { field: "weight", message: "Weight must be at least 10kg (22 lbs)" };
   }
-  if (weight > 200) {
-    return { field: "weight", message: "Weight must be at most 200kg (440 lbs)" };
+  if (weight > 1000) {
+    return { field: "weight", message: "Weight must be at most 1000kg (2200 lbs)" };
   }
   return null;
 }

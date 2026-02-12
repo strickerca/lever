@@ -173,6 +173,63 @@ export const SD_MULTIPLIER_COEFFICIENT = 0.045;
 export const HEIGHT_NORMALIZATION_TOLERANCE = 0.02; // 2%
 
 /**
+ * Stance width modifiers for squats
+ * Wider stance = greater hip abduction = shorter effective femur length in sagittal plane
+ * femurMultiplier: Applied to femur length (cos of abduction angle approximation)
+ * romMultiplier: Applied to final ROM
+ * maxTrunkAngleAdjustment: Added to max trunk angle (wider = more upright allowed)
+ */
+export const SQUAT_STANCE_MODIFIERS = {
+  narrow: {
+    femurMultiplier: 0.98, // ~11° abduction
+    romMultiplier: 1.02,
+    maxTrunkAngleAdjustment: -2,
+  },
+  normal: {
+    femurMultiplier: 1.0, // baseline
+    romMultiplier: 1.0,
+    maxTrunkAngleAdjustment: 0,
+  },
+  wide: {
+    femurMultiplier: 0.95, // ~18° abduction
+    romMultiplier: 0.96,
+    maxTrunkAngleAdjustment: 3,
+  },
+  ultraWide: {
+    femurMultiplier: 0.90, // ~26° abduction
+    romMultiplier: 0.92,
+    maxTrunkAngleAdjustment: 5,
+  },
+} as const;
+
+/**
+ * Stance width modifiers for sumo deadlifts
+ * Wider stance = greater abduction = significantly reduced ROM
+ */
+export const SUMO_STANCE_MODIFIERS = {
+  hybrid: {
+    femurMultiplier: 0.93, // ~21° abduction
+    romMultiplier: 0.90,
+    maxTrunkAngleAdjustment: 2,
+  },
+  normal: {
+    femurMultiplier: 0.87, // ~30° abduction
+    romMultiplier: 0.85,
+    maxTrunkAngleAdjustment: 5,
+  },
+  wide: {
+    femurMultiplier: 0.82, // ~35° abduction
+    romMultiplier: 0.80,
+    maxTrunkAngleAdjustment: 8,
+  },
+  ultraWide: {
+    femurMultiplier: 0.77, // ~40° abduction
+    romMultiplier: 0.75,
+    maxTrunkAngleAdjustment: 10,
+  },
+} as const;
+
+/**
  * Kinematic solver parameters
  */
 export const KINEMATIC_SOLVER = {
@@ -182,4 +239,25 @@ export const KINEMATIC_SOLVER = {
   maxTrunkAngle: 80, // degrees - maximum valid trunk angle
   parallelDepthFemurAngle: 0, // degrees - femur parallel to ground
   fallbackDisplacementFactor: 0.37, // × height when solver fails
+} as const;
+
+/**
+ * Load capacity factors for squat variants
+ * Based on research showing low bar allows 5-10% greater load capacity
+ * Source: Wretenberg et al. (1996), Swinton et al. (2012)
+ *
+ * These factors represent the RELATIVE LOAD CAPACITY of each variant.
+ * A factor of 1.075 means the variant allows ~7.5% more load to be lifted.
+ *
+ * IMPORTANT: These are EMPIRICAL corrections applied on top of our physics model.
+ * Our pure physics calculations are geometrically correct for parallel depth.
+ * The load capacity differences come from:
+ * - Muscle recruitment patterns (posterior chain vs quads)
+ * - Hip extensors being stronger than knee extensors
+ * - Practical execution differences (depth, technique variation)
+ */
+export const SQUAT_VARIANT_LOAD_CAPACITY_FACTORS = {
+  highBar: 1.00,   // baseline
+  lowBar: 1.075,   // ~7.5% more load capacity (research: 5-10% range)
+  front: 0.85,     // ~15% less load capacity (more upright, quad-dominant)
 } as const;

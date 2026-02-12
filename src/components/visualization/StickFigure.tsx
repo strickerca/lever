@@ -39,10 +39,11 @@ export function StickFigure({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Calculate scale based on maximum height
-    const maxHeight = Math.max(heightA, heightB || 0);
-    const padding = 40;
+    // Calculate scale based on maximum height to fit tallest figure
+    const maxHeight = Math.max(heightA, heightB || heightA);
+    const padding = 60; // Increased padding for labels
     const availableHeight = canvas.height - padding * 2;
+    // Use the same scale for both figures so sizes are comparable
     const scale = availableHeight / maxHeight;
 
     // Draw figures
@@ -55,6 +56,7 @@ export function StickFigure({
         spacing,
         canvas.height - padding,
         scale,
+        heightA,
         COLORS.lifterA,
         "Lifter A",
         showMomentArms
@@ -65,6 +67,7 @@ export function StickFigure({
         spacing * 2,
         canvas.height - padding,
         scale,
+        heightB || heightA,
         COLORS.lifterB,
         "Lifter B",
         showMomentArms
@@ -77,6 +80,7 @@ export function StickFigure({
         canvas.width / 2,
         canvas.height - padding,
         scale,
+        heightA,
         COLORS.lifterA,
         "Lifter A",
         showMomentArms
@@ -90,11 +94,13 @@ export function StickFigure({
     offsetX: number,
     offsetY: number,
     scale: number,
+    height: number,
     color: string,
     label: string,
     showMomentArms: boolean
   ) {
     // Helper to convert position to canvas coords
+    // All positions are in meters and use the same scale for true size comparison
     const toCanvas = (pos: { x: number; y: number }) => ({
       x: offsetX + pos.x * scale,
       y: offsetY - pos.y * scale,
@@ -189,11 +195,23 @@ export function StickFigure({
       );
     }
 
+    // Calculate label position based on actual figure height
+    const labelOffsetY = Math.max(height * scale + 30, 220);
+
     // Add label above figure
     ctx.fillStyle = color;
     ctx.font = "bold 16px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, offsetX, offsetY - 220);
+    ctx.fillText(label, offsetX, offsetY - labelOffsetY);
+
+    // Add height annotation
+    ctx.fillStyle = color;
+    ctx.font = "12px sans-serif";
+    ctx.fillText(
+      `Height: ${height.toFixed(2)}m`,
+      offsetX,
+      offsetY - labelOffsetY + 15
+    );
 
     // Add trunk angle annotation
     ctx.fillStyle = color;
@@ -201,7 +219,7 @@ export function StickFigure({
     ctx.fillText(
       `Trunk: ${kinematics.angles.trunk.toFixed(1)}°`,
       offsetX,
-      offsetY - 205
+      offsetY - labelOffsetY + 30
     );
 
     // Add displacement annotation
@@ -210,7 +228,7 @@ export function StickFigure({
     ctx.fillText(
       `ROM: ${kinematics.displacement.toFixed(3)}m`,
       offsetX,
-      offsetY - 190
+      offsetY - labelOffsetY + 45
     );
   }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compareLifts, compareCrossLift } from "../comparison";
 import { createSimpleProfile } from "../anthropometry";
+import { calculateSquatWork } from "../physics";
 import { LiftFamily, Sex } from "@/types";
 
 describe("Comparison Engine", () => {
@@ -154,11 +155,27 @@ describe("Comparison Engine", () => {
         expect(result.lifterB.equivalentLoad).toBeGreaterThan(100);
       }
 
-      // Equivalent load should scale by demand ratio
+      // Equivalent load should scale by demand ratio AND body mass ratio
+      // Calculate bodyweight work for each lifter to get body mass scaling
+      const metricsA_bw = calculateSquatWork(
+        lifterA.anthropometry,
+        "highBar",
+        0,
+        1
+      );
+      const metricsB_bw = calculateSquatWork(
+        lifterB.anthropometry,
+        "highBar",
+        0,
+        1
+      );
+      const bodyMassRatio = metricsA_bw.workPerRep / metricsB_bw.workPerRep;
+
       const expectedEquivalent =
         100 *
         (result.lifterA.metrics.demandFactor /
-          (result.lifterB.metrics?.demandFactor || 1));
+          (result.lifterB.metrics?.demandFactor || 1)) *
+        bodyMassRatio;
       expect(result.lifterB.equivalentLoad).toBeCloseTo(expectedEquivalent, 1);
     });
 
@@ -388,6 +405,131 @@ describe("Comparison Engine", () => {
       } else {
         expect(result.comparison.advantageDirection).toBe("neutral");
       }
+    });
+  });
+
+  describe("Capacity-Adjusted Comparison", () => {
+    it("should include capacity adjustment for different squat variants", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.SQUAT,
+        "highBar",
+        "lowBar",
+        { load: 100, reps: 5 }
+      );
+
+      // Should have capacity adjusted data
+      expect(result.capacityAdjusted).toBeDefined();
+      expect(result.capacityAdjusted?.lifterACapacityFactor).toBe(1.0); // high bar
+      expect(result.capacityAdjusted?.lifterBCapacityFactor).toBe(1.075); // low bar
+    });
+
+    it("should calculate adjusted loads correctly", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.SQUAT,
+        "highBar",
+        "lowBar",
+        { load: 100, reps: 5 }
+      );
+
+      // Adjusted load = actual load / capacity factor
+      expect(result.capacityAdjusted?.adjustedLoadA).toBeCloseTo(100 / 1.0, 2);
+      expect(result.capacityAdjusted?.adjustedLoadB).toBeCloseTo(100 / 1.075, 2);
+    });
+
+    it("should adjust advantage direction when variants differ", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.SQUAT,
+        "highBar",
+        "lowBar",
+        { load: 100, reps: 5 }
+      );
+
+      // Pure physics comparison should be nearly neutral (same lifter, parallel depth)
+      expect(Math.abs(result.comparison.advantagePercentage)).toBeLessThan(2);
+
+      // Capacity-adjusted should favor high bar (lower capacity = harder)
+      expect(result.capacityAdjusted).toBeDefined();
+      expect(result.capacityAdjusted!.adjustedAdvantagePercentage).toBeGreaterThan(2);
+      expect(result.capacityAdjusted!.adjustedAdvantageDirection).toBe("advantage_A");
+    });
+
+    it("should NOT include capacity adjustment for same variant", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.SQUAT,
+        "highBar",
+        "highBar",
+        { load: 100, reps: 5 }
+      );
+
+      // Should NOT have capacity adjusted data (same variant)
+      expect(result.capacityAdjusted).toBeUndefined();
+    });
+
+    it("should NOT include capacity adjustment for non-squat lifts", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.DEADLIFT,
+        "conventional",
+        "sumo",
+        { load: 100, reps: 5 }
+      );
+
+      // Should NOT have capacity adjusted data (not a squat)
+      expect(result.capacityAdjusted).toBeUndefined();
+    });
+
+    it("should generate capacity adjustment explanation", () => {
+      const lifter = {
+        anthropometry: createSimpleProfile(1.75, 77, Sex.MALE),
+        name: "Test Lifter",
+      };
+
+      const result = compareLifts(
+        lifter,
+        lifter,
+        LiftFamily.SQUAT,
+        "highBar",
+        "lowBar",
+        { load: 100, reps: 5 }
+      );
+
+      expect(result.capacityAdjusted?.explanation).toBeDefined();
+      expect(result.capacityAdjusted!.explanation.length).toBeGreaterThan(0);
+      expect(result.capacityAdjusted!.explanation).toContain("Research");
     });
   });
 });
