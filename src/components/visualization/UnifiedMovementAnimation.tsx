@@ -1732,10 +1732,10 @@ export function UnifiedMovementAnimation({
   return (
     <div className="w-full">
       {/* 3-Column Command Center Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
 
         {/* LEFT PANEL: Lifter A (Build & Performance) */}
-        <div className="lg:col-span-1 min-h-[500px]">
+        <div className="lg:col-span-1 h-[600px] lg:h-[700px]">
           <LifterPanel
             name={lifterA.name}
             lifterKey="lifterA"
@@ -1956,7 +1956,7 @@ export function UnifiedMovementAnimation({
         </div>
 
         {/* Right Panel (Lifter B) - Floating Glass */}
-        <div className="lg:col-span-1 min-h-[500px]">
+        <div className="lg:col-span-1 h-[600px] lg:h-[700px]">
           <LifterPanel
             name={lifterB.name}
             lifterKey="lifterB"
