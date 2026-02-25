@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sex, TorsoLegProportion, ArmProportion } from "@/types";
 import { AnthropometryDropdown } from "@/components/ui/AnthropometryDropdown";
+import { ArchetypeGrid } from "@/components/anthropometry/ArchetypeGrid";
 import { getArchetype } from "@/lib/archetypes";
 import { useUnits } from "@/hooks/useUnits";
 
@@ -415,8 +416,20 @@ export function BuildInput({
               />
             </div>
 
-            {/* Archetype Display & Visualizer */}
-            <div className="mt-3 grid grid-cols-[1fr_auto] gap-3">
+            {/* Archetype Preset Grid */}
+            <div className="mt-3">
+              <ArchetypeGrid
+                sex={sex}
+                currentTorsoLeg={torsoLegRatio}
+                currentArm={armLength}
+                onSelect={(tl, arm) =>
+                  onChange({ height, weight, sex, torsoLegRatio: tl, armLength: arm })
+                }
+              />
+            </div>
+
+            {/* Archetype Display Card */}
+            <div className="mt-2">
               <div className={`p-3 rounded-lg border bg-gradient-to-r ${archetype.theme.colors.background} ${archetype.theme.colors.accent} ${archetype.theme.colors.glow} shadow-lg transition-all duration-300 flex flex-col justify-center`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold text-white/60 tracking-wider">ARCHETYPE</span>
@@ -428,7 +441,6 @@ export function BuildInput({
                   &ldquo;{archetype.description}&rdquo;
                 </p>
               </div>
-
             </div>
           </div>
         )}

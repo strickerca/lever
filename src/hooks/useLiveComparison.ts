@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDebounce } from "use-debounce";
 import { compareLifts } from "@/lib/biomechanics/comparison";
 import { createProfileFromProportions, createProfileFromSegments } from "@/lib/biomechanics/anthropometry";
@@ -79,8 +79,10 @@ export function useLiveComparison(inputs: ComparisonInputs) {
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-    // Debounce the entire inputs object
-    const [debouncedInputs] = useDebounce(inputs, 500);
+    // Skip debounce on first run for instant results on page load
+    const isFirstRun = useRef(true);
+    const debounceMs = isFirstRun.current ? 0 : 500;
+    const [debouncedInputs] = useDebounce(inputs, debounceMs);
 
     useEffect(() => {
         async function calculate() {
@@ -182,6 +184,7 @@ export function useLiveComparison(inputs: ComparisonInputs) {
                 setError(message);
             } finally {
                 setIsCalculating(false);
+                isFirstRun.current = false;
             }
         }
 
