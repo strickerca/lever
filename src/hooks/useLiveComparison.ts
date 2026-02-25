@@ -1,9 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useDebounce } from "use-debounce";
 import { compareLifts } from "@/lib/biomechanics/comparison";
-import { createProfileFromProportions, createProfileFromSegments } from "@/lib/biomechanics/anthropometry";
+import {
+    createProfileFromProportions,
+    createProfileFromSegments,
+    validateAnthropometry,
+} from "@/lib/biomechanics/anthropometry";
 import {
     ComparisonResult,
+    ChestSize,
     LiftFamily,
     Sex,
     TorsoLegProportion,
@@ -57,7 +62,7 @@ export interface ComparisonInputs {
         stance?: string;
         pushupWeight?: number;
         barStartHeightOffset?: number;
-        chestSize?: string;
+        chestSize?: ChestSize;
         squatDepth?: string;
     };
     liftDataB: {
@@ -68,7 +73,7 @@ export interface ComparisonInputs {
         stance?: string;
         pushupWeight?: number;
         barStartHeightOffset?: number;
-        chestSize?: string;
+        chestSize?: ChestSize;
         squatDepth?: string;
     };
 }
@@ -151,6 +156,19 @@ export function useLiveComparison(inputs: ComparisonInputs) {
                     );
                 }
 
+                const anthroValidationA = validateAnthropometry(anthroA);
+                const anthroValidationB = validateAnthropometry(anthroB);
+                const anthropometryErrors = [
+                    ...anthroValidationA.errors.map((e) => `Lifter A: ${e}`),
+                    ...anthroValidationB.errors.map((e) => `Lifter B: ${e}`),
+                ];
+
+                if (anthropometryErrors.length > 0) {
+                    setValidationErrors(anthropometryErrors);
+                    setIsCalculating(false);
+                    return;
+                }
+
                 // 3. Comparison Logic
                 // Simulate async if needed, or just run sync (compareLifts is sync)
 
@@ -173,7 +191,9 @@ export function useLiveComparison(inputs: ComparisonInputs) {
                     liftDataA.barStartHeightOffset,
                     liftDataB.barStartHeightOffset,
                     liftDataA.squatDepth,
-                    liftDataB.squatDepth
+                    liftDataB.squatDepth,
+                    (liftDataA.chestSize as "small" | "average" | "large" | undefined) ?? "average",
+                    (liftDataB.chestSize as "small" | "average" | "large" | undefined) ?? "average"
                 );
 
                 setResult(comparisonResult);

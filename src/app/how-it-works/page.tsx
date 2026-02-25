@@ -120,7 +120,7 @@ export default function HowItWorksPage() {
               midfoot. This is called the <strong className="text-white">equilibrium constraint</strong>.
             </p>
             <p>
-              LEVER uses an iterative kinematic solver to find your exact body
+              LEVER uses an iterative kinematic solver to estimate your body
               position at parallel depth while keeping the bar over midfoot. The
               solver:
             </p>
@@ -137,7 +137,8 @@ export default function HowItWorksPage() {
             <div className="bg-green-950/50 border-l-4 border-green-500 p-4 rounded mt-4">
               <p className="font-semibold text-green-200">Result:</p>
               <p>
-                A precise model of your squat biomechanics, including all moment
+                A constrained geometric model of your squat biomechanics, including
+                estimated moment
                 arms and bar displacement.
               </p>
             </div>
@@ -156,10 +157,10 @@ export default function HowItWorksPage() {
             </p>
             <div className="bg-purple-950/50 border-l-4 border-purple-500 p-4 rounded">
               <p className="font-mono text-lg text-center text-purple-200">
-                Demand = Moment Arm x &radic;(Displacement)
+                Demand &asymp; Base Factor x (ROM / ROM<sub>ref</sub>) x (Moment Arm / MA<sub>ref</sub>)
               </p>
               <p className="text-center text-sm text-slate-400 mt-2">
-                Square root dampens displacement effect
+                Lift-specific normalization keeps scores comparable across setups
               </p>
             </div>
             <p>
@@ -190,11 +191,11 @@ export default function HowItWorksPage() {
             5. Known Limitations
           </h2>
           <div className="space-y-3 text-slate-300">
-            <p>LEVER is accurate but has some limitations:</p>
+            <p>LEVER is a biomechanics model with known limitations:</p>
             <ul className="space-y-2 list-disc list-inside ml-4">
               <li>
                 <strong className="text-white">2D model:</strong> Only considers sagittal plane (side
-                view). Doesn&rsquo;t account for stance width or knee tracking.
+                view). Stance width is approximated with modifiers, but full 3D knee/hip tracking is not modeled.
               </li>
               <li>
                 <strong className="text-white">Population averages:</strong> Segment ratios are based on

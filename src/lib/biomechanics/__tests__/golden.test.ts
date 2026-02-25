@@ -124,7 +124,11 @@ describe("Golden Tests from Specification", () => {
 
   describe("Long arms: ~5% less deadlift ROM", () => {
     it("should show long arms reduce deadlift displacement by approximately 5%", () => {
-      const averageArms = createSimpleProfile(1.8, 80, Sex.MALE);
+      const averageArms = createAdvancedProfile(1.8, 80, Sex.MALE, {
+        arms: 0,
+        legs: 0,
+        torso: 0,
+      });
       const longArms = createAdvancedProfile(1.8, 80, Sex.MALE, {
         arms: 2,
         legs: 0,
@@ -149,7 +153,11 @@ describe("Golden Tests from Specification", () => {
     });
 
     it("should show long arms affect deadlift work", () => {
-      const averageArms = createSimpleProfile(1.8, 80, Sex.MALE);
+      const averageArms = createAdvancedProfile(1.8, 80, Sex.MALE, {
+        arms: 0,
+        legs: 0,
+        torso: 0,
+      });
       const longArms = createAdvancedProfile(1.8, 80, Sex.MALE, {
         arms: 2,
         legs: 0,

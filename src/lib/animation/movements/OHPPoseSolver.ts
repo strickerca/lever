@@ -75,6 +75,7 @@ export class OHPPoseSolver extends PoseSolver {
     // Bar is directly overhead (centered).
     // X: 0 (Stacked)
     // Y: Shoulder + Arm Length
+    // Animation arm chain models shoulder->elbow->wrist only.
     const armLength = segments.upperArm + segments.forearm;
     const endBarX = 0;
     const endBarY = shoulder.y + armLength;

@@ -12,7 +12,7 @@ export default function HomePage() {
           </h1>
           <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mx-auto">
             Stop comparing apples to oranges. LEVER uses biomechanics to compare
-            lifts across different body types, fairly and scientifically.
+            lifts across different body types with a transparent, model-based approach.
           </p>
 
           <div className="pt-4">
@@ -109,7 +109,7 @@ export default function HomePage() {
             Ready to Compare?
           </h2>
           <p className="text-xl text-blue-200/70 mb-8 max-w-2xl mx-auto">
-            Get scientifically accurate lift comparisons in seconds. No signup
+            Get biomechanics-informed lift comparisons in seconds. No signup
             required.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -133,7 +133,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-slate-500">
         <p>
-          Built with biomechanics research. Open source and free to use.
+          Built with biomechanics-informed modeling. Open source and free to use.
         </p>
       </footer>
     </div>

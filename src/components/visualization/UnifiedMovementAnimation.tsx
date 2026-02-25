@@ -454,7 +454,9 @@ export function UnifiedMovementAnimation({
     metricsA.demandFactor,
     romA,
     repsA,
-    timePerRepA
+    timePerRepA,
+    lifterA.anthropometry,
+    movement
   );
 
   const dynamicCaloriesB = calculateMetabolicCost(
@@ -462,7 +464,9 @@ export function UnifiedMovementAnimation({
     metricsB.demandFactor,
     romB,
     repsB,
-    timePerRepB
+    timePerRepB,
+    lifterB.anthropometry,
+    movement
   );
 
 

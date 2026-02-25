@@ -220,6 +220,7 @@ export class PullupPoseSolver extends PoseSolver {
     // VERTICAL DISPLACEMENT (shoulder height based on progress)
     // =========================================================================
 
+    // Animation arm chain models shoulder->elbow->wrist only.
     const armLength = segments.upperArm + segments.forearm;
     const headRadius = segments.headNeck * 0.35;
     const chinClearanceAboveBar = segments.height * 0.012; // Small clearance for chin

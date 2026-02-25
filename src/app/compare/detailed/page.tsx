@@ -12,7 +12,11 @@ import { UnifiedMovementAnimation } from "@/components/visualization/UnifiedMove
 import { ComparisonModeSelector } from "@/components/comparison/ComparisonModeSelector";
 import { ResultsSkeleton, StickFigureSkeleton } from "@/components/ui/Skeleton";
 import { showToast, ToastContainer } from "@/components/ui/Toast";
-import { createSimpleProfile, createProfileFromSegments } from "@/lib/biomechanics/anthropometry";
+import {
+  createProfileFromProportions,
+  createProfileFromSegments,
+  validateAnthropometry,
+} from "@/lib/biomechanics/anthropometry";
 import { compareLifts } from "@/lib/biomechanics/comparison";
 import { useLeverStore } from "@/store";
 import {
@@ -235,7 +239,14 @@ export default function DetailedComparePage() {
             customSegmentsA.segments
           );
         } else {
-          anthroA = createSimpleProfile(lifterA.height, lifterA.weight, lifterA.sex);
+          anthroA = createProfileFromProportions(
+            lifterA.height,
+            lifterA.weight,
+            lifterA.sex,
+            0,
+            0,
+            0
+          );
         }
 
         // Lifter B
@@ -248,7 +259,27 @@ export default function DetailedComparePage() {
             customSegmentsB.segments
           );
         } else {
-          anthroB = createSimpleProfile(lifterB.height, lifterB.weight, lifterB.sex);
+          anthroB = createProfileFromProportions(
+            lifterB.height,
+            lifterB.weight,
+            lifterB.sex,
+            0,
+            0,
+            0
+          );
+        }
+
+        const anthroValidationA = validateAnthropometry(anthroA);
+        const anthroValidationB = validateAnthropometry(anthroB);
+        if (!anthroValidationA.valid || !anthroValidationB.valid) {
+          const anthropometryErrors = [
+            ...anthroValidationA.errors.map((e) => `Lifter A: ${e}`),
+            ...anthroValidationB.errors.map((e) => `Lifter B: ${e}`),
+          ];
+          setValidationErrors(anthropometryErrors);
+          showToast("error", anthropometryErrors[0] || "Invalid anthropometry values");
+          setIsComparing(false);
+          return;
         }
 
         // Compare lifts
@@ -265,7 +296,11 @@ export default function DetailedComparePage() {
           liftDataA.pushupWeight,
           liftDataB.pushupWeight,
           liftDataA.barStartHeightOffset,
-          liftDataB.barStartHeightOffset
+          liftDataB.barStartHeightOffset,
+          liftDataA.squatDepth,
+          liftDataB.squatDepth,
+          (liftDataA.chestSize as "small" | "average" | "large" | undefined) ?? "average",
+          (liftDataB.chestSize as "small" | "average" | "large" | undefined) ?? "average"
         );
 
         setResult(comparisonResult);
@@ -547,6 +582,8 @@ export default function DetailedComparePage() {
             <ResultsDisplay
               result={result}
               showEquivalentPerformance={false}
+              liftFamily={liftDataA.liftFamily}
+              variant={liftDataA.variant}
             />
 
             {/* Explanations */}

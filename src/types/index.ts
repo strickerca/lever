@@ -72,6 +72,8 @@ export enum PullupGrip {
   PRONATED = "pronated", // pull-up
 }
 
+export type ChestSize = "small" | "average" | "large";
+
 // Anthropometry types
 export interface SegmentLengths {
   height: number; // meters - total standing height
@@ -223,7 +225,7 @@ export interface LiftData {
   stance?: string;
   pushupWeight?: number;
   barStartHeightOffset?: number;
-  chestSize?: "small" | "average" | "large";
+  chestSize?: ChestSize;
   squatDepth?: "parallel" | "belowParallel";
 }
 

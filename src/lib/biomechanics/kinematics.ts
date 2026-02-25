@@ -1,16 +1,23 @@
-import { Anthropometry, KinematicSolution, Point2D, SquatVariant, SquatStance } from "../../types";
+import {
+  Anthropometry,
+  ChestSize,
+  KinematicSolution,
+  Point2D,
+  SquatVariant,
+  SquatStance,
+} from "../../types";
 import {
   AVERAGE_CHEST_DEPTH,
   BAR_POSITIONS,
   BENCH_ARCH_HEIGHTS,
   BENCH_GRIP_ANGLES,
-  HAND_GRIP_RATIO,
   KINEMATIC_SOLVER,
   MIN_BENCH_DISPLACEMENT,
   SQUAT_STANCE_MODIFIERS,
   STANDARD_PLATE_RADIUS,
   SUMO_STANCE_MODIFIERS,
 } from "./constants";
+import { armToGripLength, chestDepthForSize } from "./geometry";
 
 /**
  * Converts degrees to radians
@@ -270,7 +277,7 @@ export function solveDeadliftKinematics(
   // We assume vertical arms at start for max efficiency (or slight angle).
   // Y_shoulder = Y_bar + L_arm
   // Note: Most lifters engage Lats, slight arm angle, but vertical is good baseline constraint.
-  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO; // Hand is engaging bar
+  const armLength = armToGripLength(segments);
   const targetShoulderHeight = barStartHeight + armLength;
 
   // 5. Iterative Solver
@@ -437,7 +444,7 @@ export function solveDeadliftKinematics(
   // Recalculate displacement based on lockout.
   // Sumo reduces sagittal-plane ROM via stance-dependent multipliers.
   const lockoutHeight =
-    anthropometry.derived.acromionHeight - anthropometry.derived.totalArm;
+    anthropometry.derived.acromionHeight - armToGripLength(segments);
   const conventionalDisplacement = lockoutHeight - barStartHeight;
   const romMultiplier =
     variant === "sumo" ? SUMO_STANCE_MODIFIERS[stance].romMultiplier : 1;
@@ -457,7 +464,8 @@ export function solveDeadliftKinematics(
 export function solveBenchKinematics(
   anthropometry: Anthropometry,
   gripWidth: "narrow" | "medium" | "wide",
-  archStyle: "flat" | "moderate" | "competitive" | "extreme"
+  archStyle: "flat" | "moderate" | "competitive" | "extreme",
+  chestSize: ChestSize = "average"
 ): KinematicSolution {
   const segments = anthropometry.segments;
 
@@ -474,7 +482,7 @@ export function solveBenchKinematics(
   const gripAngleRad = toRadians(gripAngle);
 
   // Calculate bar position at lockout
-  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+  const armLength = armToGripLength(segments);
   const barExtension = armLength * Math.cos(gripAngleRad);
   const barX = 0;
   const barY = shoulderY + barExtension;
@@ -501,7 +509,7 @@ export function solveBenchKinematics(
   const archHeight = BENCH_ARCH_HEIGHTS[archStyle];
 
   // Calculate displacement
-  const chestDepth = AVERAGE_CHEST_DEPTH;
+  const chestDepth = chestDepthForSize(chestSize);
   const displacement = Math.max(
     barExtension - chestDepth - archHeight,
     MIN_BENCH_DISPLACEMENT
@@ -580,7 +588,7 @@ export function solvePullupKinematics(
 
   // Calculate displacement (total arm length * 0.95)
   // Effective Arm = Upper + Fore + Hand*Grip
-  const effectiveArm = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+  const effectiveArm = armToGripLength(segments);
 
   const displacement = effectiveArm * 0.95;
 
@@ -629,7 +637,7 @@ export function solveOHPKinematics(
   const shoulderY = hipY + segments.torso;
 
   // Arms extended overhead at lockout
-  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+  const armLength = armToGripLength(segments);
   const barY = shoulderY + armLength;
   const barX = 0;
 
@@ -681,7 +689,7 @@ export function solveThrusterKinematics(
   const shoulderY = hipY + segments.torso;
 
   // Arms extended overhead
-  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+  const armLength = armToGripLength(segments);
   const barY = shoulderY + armLength;
 
   // Displacement combines squat depth + overhead press
@@ -723,7 +731,8 @@ export function solveThrusterKinematics(
  * @returns Complete kinematic solution
  */
 export function solvePushupKinematics(
-  anthropometry: Anthropometry
+  anthropometry: Anthropometry,
+  chestSize: ChestSize = "average"
 ): KinematicSolution {
   const segments = anthropometry.segments;
 
@@ -732,7 +741,7 @@ export function solvePushupKinematics(
   const handY = 0;
 
   // At top position, arms extended
-  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+  const armLength = armToGripLength(segments);
   const shoulderY = armLength * Math.cos(toRadians(80)); // Slight angle
   const shoulderX = armLength * Math.sin(toRadians(80)) * 0.3;
 
@@ -748,7 +757,11 @@ export function solvePushupKinematics(
   const ankleY = kneeY - segments.tibia * 0.5;
 
   // Displacement (vertical distance torso travels)
-  const displacement = armLength * 0.6; // Approximate chest-to-ground distance
+  const chestDepth = chestDepthForSize(chestSize);
+  const displacement = Math.max(
+    0.05,
+    armLength * 0.6 - (chestDepth - AVERAGE_CHEST_DEPTH) * 0.35
+  );
 
   return {
     valid: true,

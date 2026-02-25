@@ -10,6 +10,7 @@
  */
 
 import { calculateDeadliftDisplacement } from "@/lib/biomechanics/physics";
+import { armToGripLength } from "@/lib/biomechanics/geometry";
 import { STANDARD_PLATE_RADIUS } from "@/lib/biomechanics/constants";
 import { Anthropometry } from "@/types";
 import { Pose2D, PoseSolverInput, PoseSolverResult } from "../types";
@@ -66,7 +67,7 @@ export class DeadliftPoseSolver extends PoseSolver {
     progress: number // 0 = floor (start), 1 = lockout (top)
   ): Pose2D {
     const segments = anthropometry.segments;
-    const armLength = segments.upperArm + segments.forearm;
+    const armLength = armToGripLength(segments);
 
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     const toRad = (deg: number) => (deg * Math.PI) / 180;

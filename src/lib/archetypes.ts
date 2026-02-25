@@ -47,21 +47,21 @@ export const ARCHETYPE_GRID_MALE: Record<string, Record<string, ArchetypeData>> 
         minus1: {
             name: "DREADNOUGHT",
             description: "A compact, heavily armored fortress. Your reduced range of motion grants immense stability and pressing power.",
-            ratios: { femur: 0.228, torso: 0.307, arm: 0.933 },
+            ratios: { femur: 0.259, torso: 0.307, arm: 0.933 },
             theme: { colors: { background: "from-slate-900 to-stone-800", text: "text-orange-100", accent: "border-orange-600", glow: "shadow-orange-900/40" } }
         },
         // Avg Arms / Short Legs
         0: {
             name: "SENTINEL",
             description: "The unyielding guardian. Your imposing torso and balanced reach create a formidable defensive wall.",
-            ratios: { femur: 0.228, torso: 0.307, arm: 1.00 },
+            ratios: { femur: 0.259, torso: 0.307, arm: 1.00 },
             theme: { colors: { background: "from-blue-950 to-slate-900", text: "text-blue-100", accent: "border-blue-500", glow: "shadow-blue-600/30" } }
         },
         // Long Arms / Short Legs
         1: {
             name: "TITAN",
             description: "A colossus of myth. With a massive frame and colossal reach, you dominate space like a giant.",
-            ratios: { femur: 0.228, torso: 0.307, arm: 1.068 },
+            ratios: { femur: 0.259, torso: 0.307, arm: 1.068 },
             theme: { colors: { background: "from-yellow-950 to-stone-900", text: "text-yellow-100", accent: "border-yellow-600", glow: "shadow-yellow-600/30" } }
         },
     },
@@ -71,21 +71,21 @@ export const ARCHETYPE_GRID_MALE: Record<string, Record<string, ArchetypeData>> 
         minus1: {
             name: "BREACHER",
             description: "Built for explosive entry. Short limbs maximize your leverage for rapid, forceful movements.",
-            ratios: { femur: 0.245, torso: 0.288, arm: 0.933 },
+            ratios: { femur: 0.276, torso: 0.288, arm: 0.933 },
             theme: { colors: { background: "from-neutral-900 to-red-950", text: "text-red-100", accent: "border-red-600", glow: "shadow-red-600/40" } }
         },
         // Avg Arms / Avg Legs
         0: {
             name: "OPERATOR",
             description: "The tactical standard. Balanced proportions allow you to adapt effectively to any physical demand.",
-            ratios: { femur: 0.245, torso: 0.288, arm: 1.00 },
+            ratios: { femur: 0.276, torso: 0.288, arm: 1.00 },
             theme: { colors: { background: "from-emerald-950 to-stone-900", text: "text-emerald-100", accent: "border-emerald-600", glow: "shadow-emerald-600/30" } }
         },
         // Long Arms / Avg Legs
         1: {
             name: "LANCER",
             description: "The piercing spear. Your extended reach allows you to strike comfortably from a distance.",
-            ratios: { femur: 0.245, torso: 0.288, arm: 1.068 },
+            ratios: { femur: 0.276, torso: 0.288, arm: 1.068 },
             theme: { colors: { background: "from-sky-950 to-blue-900", text: "text-sky-100", accent: "border-sky-500", glow: "shadow-sky-500/40" } }
         },
     },
@@ -95,21 +95,21 @@ export const ARCHETYPE_GRID_MALE: Record<string, Record<string, ArchetypeData>> 
         minus1: {
             name: "STRIKER",
             description: "Agile and kinetic. Your long stride and compact upper body maximize speed and rotational power.",
-            ratios: { femur: 0.262, torso: 0.269, arm: 0.933 },
+            ratios: { femur: 0.293, torso: 0.269, arm: 0.933 },
             theme: { colors: { background: "from-cyan-950 to-slate-900", text: "text-cyan-100", accent: "border-cyan-500", glow: "shadow-cyan-500/40" } }
         },
         // Avg Arms / Long Legs
         0: {
             name: "RANGER",
             description: "The mobile scout. Built for endurance and traversing formidable terrain with efficient stride.",
-            ratios: { femur: 0.262, torso: 0.269, arm: 1.00 },
+            ratios: { femur: 0.293, torso: 0.269, arm: 1.00 },
             theme: { colors: { background: "from-green-950 to-amber-950", text: "text-green-100", accent: "border-green-600", glow: "shadow-green-600/30" } }
         },
         // Long Arms / Long Legs
         1: {
             name: "WRAITH",
             description: "A phantom of the void. Your elongated limbs provide unmatched leverage for deadly, sweeping pulls.",
-            ratios: { femur: 0.262, torso: 0.269, arm: 1.068 },
+            ratios: { femur: 0.293, torso: 0.269, arm: 1.068 },
             theme: { colors: { background: "from-purple-950 to-zinc-950", text: "text-purple-200", accent: "border-purple-600", glow: "shadow-purple-600/40" } }
         },
     }

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { compareLifts, compareCrossLift } from "../comparison";
 import { createSimpleProfile } from "../anthropometry";
-import { calculateSquatWork } from "../physics";
+import { calculateEffectiveMass } from "../physics";
+import { GRAVITY } from "../constants";
 import { LiftFamily, Sex } from "@/types";
 
 describe("Comparison Engine", () => {
@@ -155,27 +156,15 @@ describe("Comparison Engine", () => {
         expect(result.lifterB.equivalentLoad).toBeGreaterThan(100);
       }
 
-      // Equivalent load should scale by demand ratio AND body mass ratio
-      // Calculate bodyweight work for each lifter to get body mass scaling
-      const metricsA_bw = calculateSquatWork(
-        lifterA.anthropometry,
-        "highBar",
+      const displacementB = Math.max(result.lifterB.metrics?.displacement || 0, 1e-6);
+      const bodyOnlyEffectiveMassB = calculateEffectiveMass(
         0,
-        1
+        lifterB.anthropometry.mass,
+        LiftFamily.SQUAT,
+        lifterB.anthropometry.sex
       );
-      const metricsB_bw = calculateSquatWork(
-        lifterB.anthropometry,
-        "highBar",
-        0,
-        1
-      );
-      const bodyMassRatio = metricsA_bw.workPerRep / metricsB_bw.workPerRep;
-
       const expectedEquivalent =
-        100 *
-        (result.lifterA.metrics.demandFactor /
-          (result.lifterB.metrics?.demandFactor || 1)) *
-        bodyMassRatio;
+        result.lifterA.metrics.workPerRep / (GRAVITY * displacementB) - bodyOnlyEffectiveMassB;
       expect(result.lifterB.equivalentLoad).toBeCloseTo(expectedEquivalent, 1);
     });
 

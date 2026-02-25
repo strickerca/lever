@@ -1,5 +1,6 @@
 import {
   Anthropometry,
+  ChestSize,
   BenchArchStyle,
   BenchGripWidth,
   DeadliftVariant,
@@ -13,7 +14,6 @@ import {
 } from "../../types";
 import {
   ALLOMETRIC_EXPONENT,
-  AVERAGE_CHEST_DEPTH,
   BENCH_ARCH_HEIGHTS,
   BENCH_GRIP_ANGLES,
   EFFECTIVE_MASS_FACTORS,
@@ -22,7 +22,9 @@ import {
   STANDARD_PLATE_RADIUS,
   SUMO_STANCE_MODIFIERS,
   BASE_DEMAND_FACTORS,
+  SEGMENT_MASS_RATIOS,
 } from "./constants";
+import { armToGripLength, chestDepthForSize } from "./geometry";
 import {
   solveSquatKinematics,
   solveDeadliftKinematics,
@@ -93,10 +95,25 @@ export function calculateInternalWork(
   // Actually, muscles must absorb the energy too (eccentric).
   // Standard approximation: Internal Work ~ M_eff * v_squared * NumAccelerations.
 
-  const effectiveMass = calculateEffectiveMass(0, anthropometry.mass, liftFamily, anthropometry.sex);
+  let movingBodyMass = calculateEffectiveMass(
+    0,
+    anthropometry.mass,
+    liftFamily,
+    anthropometry.sex
+  );
+
+  // For upper-body supported lifts, estimate moving segment mass directly.
+  if (movingBodyMass <= 0) {
+    const segmentMass = SEGMENT_MASS_RATIOS[anthropometry.sex];
+    const bilateralArmMass =
+      2 * (segmentMass.upperArm + segmentMass.forearm + segmentMass.hand);
+    const torsoContribution =
+      liftFamily === LiftFamily.OHP ? segmentMass.torso * 0.2 : segmentMass.torso * 0.1;
+    movingBodyMass = anthropometry.mass * (bilateralArmMass + torsoContribution);
+  }
 
   // Energy per acceleration phase
-  const ke_phase = 0.5 * effectiveMass * v_squared;
+  const ke_phase = 0.5 * movingBodyMass * v_squared;
 
   // 4 phases per rep (Start-Con, End-Con, Start-Ecc, End-Ecc)
   const internalWorkPerRep = ke_phase * 4;
@@ -184,8 +201,8 @@ export function calculateEffectiveMass(
       return bodyMass + load;
 
     case LiftFamily.PUSHUP:
-      // Proportion of body mass only
-      return factor * bodyMass;
+      // Proportion of body mass plus any added external load
+      return factor * bodyMass + load;
 
     case LiftFamily.THRUSTER:
       // Load plus proportion of body mass (simplified)
@@ -215,7 +232,6 @@ export function calculateEffectiveMass(
  * Velocity_peak ~ 1.3 * Velocity_avg_concentric (harmonic approximation)
  */
 export function calculatePeakPower(
-  load: number,
   effectiveMass: number,
   displacement: number,
   timePerRep: number
@@ -299,7 +315,7 @@ export function calculateSquatWork(
     scoreP4P,
     calories,
     burnRate: (calories / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(load, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     valid: kinematics.valid,
     warnings: kinematics.valid
       ? []
@@ -347,7 +363,7 @@ export function calculateDeadliftDisplacement(
   // (bar is at roughly hip level with arms extended)
   const lockoutHeight =
     anthropometry.derived.acromionHeight -
-    anthropometry.derived.totalArm;
+    armToGripLength(anthropometry.segments);
 
   // Conventional displacement: from start to lockout
   const conventional = lockoutHeight - barStartHeight;
@@ -410,7 +426,7 @@ export function calculateDeadliftWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.DEADLIFT),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.DEADLIFT) / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(load, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     valid: kinematics.valid,
     warnings: kinematics.valid ? [] : ["Kinematic solver failed"],
   };
@@ -427,7 +443,8 @@ export function calculateDeadliftWork(
 export function calculateBenchDisplacement(
   anthropometry: Anthropometry,
   gripWidth: BenchGripWidth,
-  archStyle: BenchArchStyle
+  archStyle: BenchArchStyle,
+  chestSize: ChestSize = "average"
 ): number {
   // Get grip angle
   const gripAngle = BENCH_GRIP_ANGLES[gripWidth];
@@ -437,11 +454,10 @@ export function calculateBenchDisplacement(
   const archHeight = BENCH_ARCH_HEIGHTS[archStyle];
 
   // Calculate displacement
-  // (upperArm + forearm) × cos(gripAngle) - chestDepth - archHeight
-  // Note: Hand length is NOT included per spec correction #8
-  const L_press = anthropometry.segments.upperArm + anthropometry.segments.forearm;
+  // Shoulder-to-grip length projected to bar path.
+  const L_press = armToGripLength(anthropometry.segments);
   const pressLength = L_press * Math.cos(gripAngleRad);
-  let displacement = pressLength - AVERAGE_CHEST_DEPTH - archHeight;
+  let displacement = pressLength - chestDepthForSize(chestSize) - archHeight;
 
   // Clamp to minimum displacement
   displacement = Math.max(displacement, MIN_BENCH_DISPLACEMENT);
@@ -457,9 +473,15 @@ export function calculateBenchWork(
   gripWidth: BenchGripWidth | "narrow" | "medium" | "wide",
   archStyle: BenchArchStyle | "flat" | "moderate" | "competitive" | "extreme",
   load: number,
-  reps: number
+  reps: number,
+  chestSize: ChestSize = "average"
 ): LiftMetrics {
-  const kinematics = solveBenchKinematics(anthropometry, gripWidth, archStyle);
+  const kinematics = solveBenchKinematics(
+    anthropometry,
+    gripWidth,
+    archStyle,
+    chestSize
+  );
 
   const displacement = kinematics.displacement;
   const effectiveMass = calculateEffectiveMass(
@@ -490,7 +512,7 @@ export function calculateBenchWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.BENCH),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.BENCH) / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(load, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     valid: true,
     warnings: [],
   };
@@ -504,7 +526,7 @@ export function calculateBenchWork(
  */
 export function calculatePullupDisplacement(anthropometry: Anthropometry): number {
   // Total arm length × 0.95 (not quite full arm extension)
-  return anthropometry.derived.totalArm * 0.95;
+  return armToGripLength(anthropometry.segments) * 0.95;
 }
 
 /**
@@ -551,7 +573,7 @@ export function calculatePullupWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.PULLUP),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.PULLUP) / (reps * timePerRep || 1)) * 3600,
-    peakPower: calculatePeakPower(addedLoad, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     vpi,
     valid: true,
     warnings: [],
@@ -569,9 +591,10 @@ export function calculatePullupWork(
 export function calculatePushupWork(
   anthropometry: Anthropometry,
   reps: number,
-  addedLoad: number = 0
+  addedLoad: number = 0,
+  chestSize: ChestSize = "average"
 ): LiftMetrics {
-  const kinematics = solvePushupKinematics(anthropometry);
+  const kinematics = solvePushupKinematics(anthropometry, chestSize);
 
   const displacement = kinematics.displacement;
   // Pushup effective mass is ~65% of BW
@@ -601,7 +624,7 @@ export function calculatePushupWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.PUSHUP),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.PUSHUP) / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(addedLoad, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     valid: true,
     warnings: [],
   };
@@ -614,8 +637,7 @@ export function calculatePushupWork(
  * @returns Displacement in meters
  */
 export function calculateOHPDisplacement(anthropometry: Anthropometry): number {
-  // (upperArm + forearm) × 0.95
-  return (anthropometry.segments.upperArm + anthropometry.segments.forearm) * 0.95;
+  return armToGripLength(anthropometry.segments) * 0.95;
 }
 
 /**
@@ -655,7 +677,7 @@ export function calculateOHPWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.OHP),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, displacement, reps, timePerRep, anthropometry, LiftFamily.OHP) / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(load, effectiveMass, displacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, displacement, timePerRep),
     valid: true,
     warnings: [],
   };
@@ -713,7 +735,7 @@ export function calculateThrusterWork(
     scoreP4P,
     calories: calculateMetabolicCost(totalWork, mechanicalDemand, totalDisplacement, reps, timePerRep, anthropometry, LiftFamily.THRUSTER),
     burnRate: (calculateMetabolicCost(totalWork, mechanicalDemand, totalDisplacement, reps, timePerRep, anthropometry, LiftFamily.THRUSTER) / ((reps * timePerRep) || 1)) * 3600,
-    peakPower: calculatePeakPower(load, effectiveMass, totalDisplacement, timePerRep),
+    peakPower: calculatePeakPower(effectiveMass, totalDisplacement, timePerRep),
     valid: squatKinematics.valid,
     warnings: squatKinematics.valid ? [] : ["Squat component failure"],
   };

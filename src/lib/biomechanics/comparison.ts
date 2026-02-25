@@ -1,5 +1,6 @@
 import {
   Anthropometry,
+  ChestSize,
   BenchArchStyle,
   BenchGripWidth,
   ComparisonResult,
@@ -23,6 +24,7 @@ import {
 } from "./kinematics";
 import {
   calculateBenchWork,
+  calculateEffectiveMass,
   calculateDeadliftWork,
   calculateOHPWork,
   calculatePullupWork,
@@ -31,6 +33,7 @@ import {
   calculateThrusterWork,
 } from "./physics";
 import { SQUAT_VARIANT_LOAD_CAPACITY_FACTORS } from "./constants";
+import { GRAVITY } from "./constants";
 
 /**
  * Calculates lift metrics based on lift family and variant
@@ -44,7 +47,8 @@ function calculateLiftMetrics(
   stance?: string,
   pushupWeight?: number,
   barStartHeightOffset?: number,
-  squatDepth?: string
+  squatDepth?: string,
+  chestSize: ChestSize = "average"
 ): LiftMetrics {
   switch (liftFamily) {
     case LiftFamily.SQUAT:
@@ -98,7 +102,8 @@ function calculateLiftMetrics(
         gripWidth as BenchGripWidth,
         archStyle as BenchArchStyle,
         load,
-        reps
+        reps,
+        chestSize
       );
 
     case LiftFamily.PULLUP:
@@ -110,7 +115,7 @@ function calculateLiftMetrics(
       );
 
     case LiftFamily.PUSHUP:
-      return calculatePushupWork(anthropometry, reps, pushupWeight || 0);
+      return calculatePushupWork(anthropometry, reps, pushupWeight || 0, chestSize);
 
     case LiftFamily.OHP:
       return calculateOHPWork(anthropometry, load, reps);
@@ -132,7 +137,8 @@ function getKinematics(
   variant: string,
   stance?: string,
   barStartHeightOffset?: number,
-  squatDepth?: string
+  squatDepth?: string,
+  chestSize: ChestSize = "average"
 ): KinematicSolution | undefined {
   switch (liftFamily) {
     case LiftFamily.SQUAT:
@@ -156,7 +162,8 @@ function getKinematics(
       return solveBenchKinematics(
         anthropometry,
         gripWidth as "narrow" | "medium" | "wide",
-        archStyle as "flat" | "moderate" | "competitive" | "extreme"
+        archStyle as "flat" | "moderate" | "competitive" | "extreme",
+        chestSize
       );
 
     case LiftFamily.PULLUP:
@@ -172,7 +179,7 @@ function getKinematics(
       return solveThrusterKinematics(anthropometry);
 
     case LiftFamily.PUSHUP:
-      return solvePushupKinematics(anthropometry);
+      return solvePushupKinematics(anthropometry, chestSize);
 
     default:
       return undefined;
@@ -212,7 +219,9 @@ export function compareLifts(
   barStartHeightOffsetA?: number,
   barStartHeightOffsetB?: number,
   squatDepthA?: string,
-  squatDepthB?: string
+  squatDepthB?: string,
+  chestSizeA: ChestSize = "average",
+  chestSizeB: ChestSize = "average"
 ): ComparisonResult {
   // If performanceB not provided, use performanceA (legacy behavior for same performance)
   const perfB = performanceB ?? performanceA;
@@ -227,7 +236,8 @@ export function compareLifts(
     stanceA,
     pushupWeightA,
     barStartHeightOffsetA,
-    squatDepthA
+    squatDepthA,
+    chestSizeA
   );
 
   // Step 2: Compute metrics for Lifter B with THEIR OWN load and reps
@@ -240,7 +250,8 @@ export function compareLifts(
     stanceB,
     pushupWeightB,
     barStartHeightOffsetB,
-    squatDepthB
+    squatDepthB,
+    chestSizeB
   );
 
   // Step 3: Calculate demand factors with load to get pure biomechanical demand
@@ -253,7 +264,8 @@ export function compareLifts(
     stanceA,
     pushupWeightA,
     barStartHeightOffsetA,
-    squatDepthA
+    squatDepthA,
+    chestSizeA
   );
   const metricsB_1rep = calculateLiftMetrics(
     lifterB.anthropometry,
@@ -264,51 +276,28 @@ export function compareLifts(
     stanceB,
     pushupWeightB,
     barStartHeightOffsetB,
-    squatDepthB
-  );
-
-  // Calculate bodyweight-only demand to capture body mass differences
-  const metricsA_bw = calculateLiftMetrics(
-    lifterA.anthropometry,
-    liftFamily,
-    variantA,
-    0,
-    1,
-    stanceA,
-    0, // No pushup weight for baseline
-    barStartHeightOffsetA,
-    squatDepthA
-  );
-  const metricsB_bw = calculateLiftMetrics(
-    lifterB.anthropometry,
-    liftFamily,
-    variantB,
-    0,
-    1,
-    stanceB,
-    0, // No pushup weight for baseline
-    barStartHeightOffsetB,
-    squatDepthB
+    squatDepthB,
+    chestSizeB
   );
 
   // Geometric demand factor (shape/leverage)
   const geometricDemandA = metricsA_1rep.demandFactor;
   const geometricDemandB = metricsB_1rep.demandFactor;
 
-  // Bodyweight demand factor (body mass effects)
-  const bodyweightDemandA = metricsA_bw.workPerRep;
-  const bodyweightDemandB = metricsB_bw.workPerRep;
-
-  // Combined demand includes both geometric and body mass factors
+  // Geometric demand is reported as a separate score; equivalent loading is solved from work.
   const demandA = geometricDemandA;
   const demandB = geometricDemandB;
 
-  // Body mass ratio to scale equivalent load
-  const bodyMassRatio = bodyweightDemandA / bodyweightDemandB;
-
-  // Step 4: Solve for equivalent load (what load would Lifter B need for same demand)
-  // Account for both geometric differences and body mass differences
-  const equivalentLoad = performanceA.load * (demandA / demandB) * bodyMassRatio;
+  // Step 4: Solve equivalent external load for B that matches A's per-rep mechanical work.
+  const displacementB = Math.max(metricsB.displacement, 1e-6);
+  const bodyOnlyEffectiveMassB = calculateEffectiveMass(
+    0,
+    lifterB.anthropometry.mass,
+    liftFamily,
+    lifterB.anthropometry.sex
+  );
+  const equivalentLoad =
+    metricsA.workPerRep / (GRAVITY * displacementB) - bodyOnlyEffectiveMassB;
 
   // Step 5: Solve for equivalent reps
   // Reps needed for Lifter B to match Lifter A's total work at the same load
@@ -400,10 +389,26 @@ export function compareLifts(
 
   // Get kinematics only for squats (for animation)
   const kinematicsA = liftFamily === LiftFamily.SQUAT
-    ? getKinematics(lifterA.anthropometry, liftFamily, variantA, stanceA, undefined, squatDepthA)
+    ? getKinematics(
+      lifterA.anthropometry,
+      liftFamily,
+      variantA,
+      stanceA,
+      undefined,
+      squatDepthA,
+      chestSizeA
+    )
     : undefined;
   const kinematicsB = liftFamily === LiftFamily.SQUAT
-    ? getKinematics(lifterB.anthropometry, liftFamily, variantB, stanceB, undefined, squatDepthB)
+    ? getKinematics(
+      lifterB.anthropometry,
+      liftFamily,
+      variantB,
+      stanceB,
+      undefined,
+      squatDepthB,
+      chestSizeB
+    )
     : undefined;
 
   // Equalizer Logic: Normalize load based on Work Per Rep
@@ -578,8 +583,6 @@ function generateExplanations(
   if (Math.abs(comparison.advantagePercentage) > 1) {
     const advantagedLifter =
       comparison.demandRatio > 1 ? "A" : "B";
-    const disadvantagedLifter =
-      comparison.demandRatio > 1 ? "B" : "A";
     const impact =
       comparison.demandRatio > 1 ? "advantage_A" : "advantage_B";
 
@@ -596,13 +599,13 @@ function generateExplanations(
     explanations.push({
       type: "summary",
       impact,
-      message: `Bottom line: Lifter ${advantagedLifter} has a ${Math.abs(comparison.advantagePercentage).toFixed(1)}% better Leverage Score due to more favorable biomechanics. ${interpretation} When comparing performances, Lifter ${disadvantagedLifter} should consider using the equivalent load calculations above for a fair comparison.`,
+      message: `Bottom line: Lifter ${advantagedLifter} faces ${Math.abs(comparison.advantagePercentage).toFixed(1)}% lower biomechanical demand in this setup. ${interpretation} For fair comparisons, use the equivalent-load and equivalent-rep outputs to normalize for mechanics.`,
     });
   } else {
     explanations.push({
       type: "summary",
       impact: "neutral",
-      message: "Both lifters have nearly identical Leverage Scores. Any performance differences are likely due to strength levels, training, and technique rather than biomechanics. This makes for a very fair direct comparison.",
+      message: "Both lifters have nearly identical biomechanical demand scores. Any performance differences are likely due to strength, training, and technique rather than mechanics.",
     });
   }
 
@@ -631,11 +634,19 @@ export function compareCrossLift(
 ): { conversionFactor: number; equivalentLoad: number } {
   // Calculate metrics for both variants
   const metricsA = calculateLiftMetrics(anthropometry, liftFamily, variantA, load, 1, stanceA);
-  const metricsB = calculateLiftMetrics(anthropometry, liftFamily, variantB, 0, 1, stanceB);
+  const metricsB = calculateLiftMetrics(anthropometry, liftFamily, variantB, load, 1, stanceB);
 
-  // Calculate conversion factor based on demand
-  const conversionFactor = metricsA.demandFactor / metricsB.demandFactor;
-  const equivalentLoad = load * conversionFactor;
+  // Solve external load needed in B to match A's per-rep work.
+  const displacementB = Math.max(metricsB.displacement, 1e-6);
+  const bodyOnlyEffectiveMassB = calculateEffectiveMass(
+    0,
+    anthropometry.mass,
+    liftFamily,
+    anthropometry.sex
+  );
+  const equivalentLoad =
+    metricsA.workPerRep / (GRAVITY * displacementB) - bodyOnlyEffectiveMassB;
+  const conversionFactor = load === 0 ? 0 : equivalentLoad / load;
 
   return {
     conversionFactor,

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { HelpCircle } from "lucide-react";
 import { ComparisonResult, LiftFamily } from "@/types";
+import { calculateMetabolicCost } from "@/lib/biomechanics/physics";
 import { AnimatedMovementComparison } from "./AnimatedMovementComparison";
 
 interface ResultsDisplayProps {
@@ -45,26 +46,42 @@ export function ResultsDisplay({ result, showEquivalentPerformance = true, liftF
   const powerDifferenceAbsolute = powerB - powerA;
   const powerRatio = powerB > 0 ? powerB / powerA : 0;
 
-  // Metabolic cost calculations (non-linear with velocity)
-  // Based on: Mechanical efficiency decreases exponentially with velocity
-  // Reference: Gaesser & Brooks (1975), efficiency ~25% at moderate velocities
+  // Metabolic calculations from core biomechanics model.
   const timePerRep = time / reps;
   const velocityA = lifterA.metrics.displacement / timePerRep; // m/s
   const velocityB = lifterB.metrics ? lifterB.metrics.displacement / timePerRep : 0;
 
-  // Velocity-dependent efficiency: η(v) = 0.25 × e^(-α×v²)
-  // Higher velocities = exponentially lower efficiency = higher metabolic cost
-  const alpha = 0.5; // Scaling factor for velocity effect
-  const efficiencyA = 0.25 * Math.exp(-alpha * Math.pow(velocityA, 2));
-  const efficiencyB = velocityB > 0 ? 0.25 * Math.exp(-alpha * Math.pow(velocityB, 2)) : 0;
-
-  // Metabolic energy (Joules) = Mechanical work / Efficiency
-  const metabolicEnergyA = lifterA.metrics.totalWork / efficiencyA;
-  const metabolicEnergyB = lifterB.metrics ? lifterB.metrics.totalWork / efficiencyB : 0;
-
-  // Convert to kcal (1 kcal = 4184 J)
-  const metabolicCostA_kcal = metabolicEnergyA / 4184;
-  const metabolicCostB_kcal = metabolicEnergyB / 4184;
+  const metabolicCostA_kcal = liftFamily
+    ? calculateMetabolicCost(
+      lifterA.metrics.totalWork,
+      lifterA.metrics.demandFactor,
+      lifterA.metrics.displacement,
+      reps,
+      timePerRep,
+      lifterA.anthropometry,
+      liftFamily
+    )
+    : lifterA.metrics.calories;
+  const metabolicCostB_kcal = lifterB.metrics
+    ? liftFamily
+      ? calculateMetabolicCost(
+        lifterB.metrics.totalWork,
+        lifterB.metrics.demandFactor,
+        lifterB.metrics.displacement,
+        reps,
+        timePerRep,
+        lifterB.anthropometry,
+        liftFamily
+      )
+      : lifterB.metrics.calories
+    : 0;
+  const metabolicEnergyA = metabolicCostA_kcal * 4184;
+  const metabolicEnergyB = metabolicCostB_kcal * 4184;
+  const efficiencyA = metabolicEnergyA > 0 ? lifterA.metrics.totalWork / metabolicEnergyA : 0;
+  const efficiencyB =
+    metabolicEnergyB > 0 && lifterB.metrics
+      ? lifterB.metrics.totalWork / metabolicEnergyB
+      : 0;
 
   // Acceleration effect (overcoming inertia adds metabolic cost)
   // Acceleration = 2 × displacement / time² (assuming constant acceleration model)
@@ -293,7 +310,7 @@ export function ResultsDisplay({ result, showEquivalentPerformance = true, liftF
             <div className="pt-4 border-t border-slate-700">
               <h4 className="text-sm font-semibold text-slate-300 mb-3">⚡ Metabolic Energy Cost</h4>
               <p className="text-xs text-slate-400 mb-3">
-                Metabolic cost accounts for the non-linear energy demands of velocity and acceleration. Higher velocities result in exponentially lower mechanical efficiency.
+                Calculated with the same biomechanics model used for the main comparison metrics, using the selected set duration.
               </p>
 
               <div className="grid grid-cols-2 gap-4">
@@ -375,8 +392,7 @@ export function ResultsDisplay({ result, showEquivalentPerformance = true, liftF
 
               {/* Scientific Reference */}
               <div className="mt-2 text-xs text-slate-500 italic text-center">
-                <strong>Model:</strong> η(v) = 0.25 × e^(-0.5v²). Efficiency decreases exponentially with velocity
-                (Gaesser & Brooks, 1975; Hill&apos;s force-velocity relationship).
+                <strong>Model:</strong> calories are derived from mechanical work + internal work at fixed gross efficiency in the core engine.
               </div>
             </div>
           )}
@@ -393,11 +409,11 @@ export function ResultsDisplay({ result, showEquivalentPerformance = true, liftF
               <p className="text-xs text-slate-300 leading-relaxed">
                 <span className="font-semibold text-orange-400">{lifterB.name}</span> would need to lift{" "}
                 <span className="font-bold text-orange-400">{lifterB.equivalentLoad.toFixed(1)} kg</span>{" "}
-                for the same {reps.toFixed(0)} reps to match the biomechanical demand.
+                for the same {reps.toFixed(0)} reps to match per-rep mechanical work.
               </p>
 
               <p className="text-xs text-slate-300 leading-relaxed">
-                Alternatively, at the same {lifterA.metrics.effectiveMass.toFixed(0)} kg effective load,{" "}
+                Alternatively, at their current selected load,{" "}
                 <span className="font-semibold text-orange-400">{lifterB.name}</span> would need to perform{" "}
                 <span className="font-bold text-orange-400">{lifterB.equivalentReps.toFixed(1)} reps</span>{" "}
                 (instead of {reps.toFixed(0)}) to match the total work output.
@@ -464,7 +480,7 @@ export function ResultsDisplay({ result, showEquivalentPerformance = true, liftF
 
           {/* Energy per kg moved */}
           <div className="p-2 bg-slate-800/50 rounded">
-            <div className="text-xs text-slate-400">Efficiency</div>
+            <div className="text-xs text-slate-400">Specific Work</div>
             <div className="font-semibold text-white">
               {(lifterA.metrics.workPerRep / lifterA.metrics.effectiveMass).toFixed(1)} J/kg
             </div>

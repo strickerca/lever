@@ -11,6 +11,7 @@
  */
 
 import { calculateBenchDisplacement } from "@/lib/biomechanics/physics";
+import { armToGripLength } from "@/lib/biomechanics/geometry";
 import {
   BENCH_PAD_SURFACE_HEIGHT_M,
 } from "@/lib/animation/constants";
@@ -48,8 +49,9 @@ export class BenchPoseSolver extends PoseSolver {
     const { anthropometry, options } = input;
     const gripWidth = (options.benchGrip || "medium") as BenchGripWidth;
     const archStyle = (options.benchArch || "moderate") as BenchArchStyle;
+    const chestSize = (options.chestSize || "average") as "small" | "average" | "large";
 
-    return calculateBenchDisplacement(anthropometry, gripWidth, archStyle);
+    return calculateBenchDisplacement(anthropometry, gripWidth, archStyle, chestSize);
   }
 
   private generatePose(
@@ -106,7 +108,7 @@ export class BenchPoseSolver extends PoseSolver {
     // Cosine rule or simple Pythagoras: ArmLen^2 = Run^2 + Rise^2
     // Rise = sqrt(ArmLen^2 - Run^2)
     // Run = abs(wrist.x - shoulder.x)
-    const armLength = segments.upperArm + segments.forearm;
+    const armLength = armToGripLength(segments);
     const run = Math.abs(gripSpacing - shoulder.x);
     // Safety clamp (triangle inequality)
     const rise = run > armLength ? 0 : Math.sqrt(armLength * armLength - run * run);

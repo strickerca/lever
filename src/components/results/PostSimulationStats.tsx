@@ -20,7 +20,7 @@ const METRIC_DEFINITIONS = {
     peakPower: "The maximum power output generated during the concentric (lifting) phase of the movement.",
     avgPower: "The average power output maintained across the entire set, calculated as Total Work / Total Time.",
     burnRate: "The rate of caloric expenditure estimated based on the mechanical work performed.",
-    leverageScore: "A calculated score representing biomechanical efficiency. Higher means 'better' leverage (easier lift).",
+    leverageScore: "Demand Factor: a biomechanical difficulty index. Higher values mean a harder mechanical position at the same external load.",
     p4pScore: "Pound-for-Pound Score: A normalized efficiency rating comparing work done to body weight.",
     leverageDisadvantage: "The percentage difference in Leverage Score between the two lifters."
 };
@@ -224,7 +224,7 @@ export function PostSimulationStats({
                             />
                             <MetricRow
                                 icon={<Activity className="w-3 h-3 text-slate-500" />}
-                                label="Leverage Score"
+                                label="Demand Factor"
                                 valA={<span>{lifterA.metrics.demandFactor.toFixed(2)}</span>}
                                 valB={<span>{lifterB.metrics.demandFactor.toFixed(2)}</span>}
                                 tooltip={METRIC_DEFINITIONS.leverageScore}
