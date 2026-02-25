@@ -43,24 +43,17 @@ next-env.d.ts
 # Workspace files (personal IDE settings)
 *.code-workspace
 
-# Investigation scripts and artifacts
-audit-artifacts/
-src/scripts/investigate_*.ts
-
-# Experimental/Backup Component Versions
+# Backup files
 *.bak
-src/components/anthropometry/ManualSegmentLengths.tsx
-src/components/anthropometry/ProportionVisualizer.tsx
-src/components/ui/AnthropometryDropdown.tsx
-src/components/visualization/ForceVelocitySlider.tsx
-src/components/visualization/LifterPanel.tsx
-src/components/visualization/VelocityGauge.tsx
 
 # Exploratory Test Files
 src/lib/animation/__tests__/deadlift-pose-robustness.test.ts
 src/lib/animation/__tests__/deadlift-visualizer-extremes.test.ts
-src/lib/animation/__tests__/leverageVelocity.test.ts
 src/lib/biomechanics/__tests__/verification_audit.test.ts
+
+# Lint/warning artifacts
+.eslint-warnings*
+.warnings-detailed.txt
 
 # Debug Screenshots
 *.png
@@ -70,3 +63,9 @@ src/lib/biomechanics/__tests__/verification_audit.test.ts
 
 # Build Caches
 .npm-cache/
+
+# Claude Code local settings
+.claude/
+
+# Audit artifacts
+audit-artifacts/

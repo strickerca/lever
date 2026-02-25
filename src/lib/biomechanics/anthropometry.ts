@@ -2,7 +2,6 @@ import {
   Anthropometry,
   AnthropometryMode,
   DerivedAnthropometry,
-  MobilityProfile,
   SDModifiers,
   SegmentLengths,
   Sex,
@@ -13,6 +12,58 @@ import {
   SD_MULTIPLIER_COEFFICIENT,
   SEGMENT_RATIOS,
 } from "./constants";
+
+/**
+ * Creates an anthropometry profile from explicit segment lengths
+ * @param height - Standing height in meters
+ * @param mass - Body mass in kilograms
+ * @param sex - Biological sex
+ * @param customSegments - Object containing specific segment overrides
+ * @returns Complete anthropometry profile with custom segments
+ */
+export function createProfileFromSegments(
+  height: number,
+  mass: number,
+  sex: Sex,
+  customSegments: Partial<SegmentLengths>
+): Anthropometry {
+  const ratios = SEGMENT_RATIOS[sex];
+
+  // Calculate standard segments based on height
+  const standardSegments: SegmentLengths = {
+    height,
+    headNeck: height * ratios.headNeck,
+    torso: height * ratios.torso,
+    upperArm: height * ratios.upperArm,
+    forearm: height * ratios.forearm,
+    hand: height * ratios.hand,
+    femur: height * ratios.femur,
+    tibia: height * ratios.tibia,
+    footHeight: height * ratios.footHeight,
+    footLength: height * ratios.footLength,
+  };
+
+  // Merge custom segments
+  // Ensure we prioritize the passed custom values
+  // We do NOT normalize here, as the user explicitly provided lengths.
+  const segments: SegmentLengths = {
+    ...standardSegments,
+    ...customSegments,
+    height, // Enforce height remains as specified
+  };
+
+  // derived metrics
+  const derived = computeDerivedAnthropometry(segments, height);
+
+  return {
+    mode: AnthropometryMode.ADVANCED, // Treated as advanced/custom
+    sex,
+    mass,
+    segments,
+    derived,
+    mobility: { ...DEFAULT_MOBILITY },
+  };
+}
 
 /**
  * Creates a simple anthropometry profile using standard segment ratios
@@ -39,6 +90,7 @@ export function createSimpleProfile(
     femur: height * ratios.femur,
     tibia: height * ratios.tibia,
     footHeight: height * ratios.footHeight,
+    footLength: height * ratios.footLength,
   };
 
   // Note: Simple mode does NOT normalize (ratios sum to 0.948)
@@ -89,6 +141,7 @@ export function createAdvancedProfile(
     femur: height * ratios.femur * legMultiplier,
     tibia: height * ratios.tibia * legMultiplier,
     footHeight: height * ratios.footHeight * legMultiplier,
+    footLength: height * ratios.footLength * legMultiplier,
   };
 
   // Normalize to ensure segments sum to target height
@@ -117,6 +170,18 @@ export function createAdvancedProfile(
  * @param legSD - Leg length modifier (-2 to +2)
  * @returns Complete anthropometry profile with custom proportions
  */
+import { ARCHETYPE_GRID_MALE, ARCHETYPE_GRID_FEMALE } from "../archetypes";
+
+/**
+ * Creates an anthropometry profile from simplified segment proportion options
+ * @param height - Standing height in meters
+ * @param mass - Body mass in kilograms
+ * @param sex - Biological sex
+ * @param torsoSD - Torso length modifier (-2 to +2)
+ * @param armSD - Arm length modifier (-2 to +2)
+ * @param legSD - Leg length modifier (-2 to +2)
+ * @returns Complete anthropometry profile with custom proportions
+ */
 export function createProfileFromProportions(
   height: number,
   mass: number,
@@ -127,24 +192,78 @@ export function createProfileFromProportions(
 ): Anthropometry {
   const ratios = SEGMENT_RATIOS[sex];
 
-  // Calculate multipliers using formula: 1 + (SD × 0.045)
-  const armMultiplier = 1 + armSD * SD_MULTIPLIER_COEFFICIENT;
-  const legMultiplier = 1 + legSD * SD_MULTIPLIER_COEFFICIENT;
-  const torsoMultiplier = 1 + torsoSD * SD_MULTIPLIER_COEFFICIENT;
-
-  // Apply ratios with modifiers
-  // For arms and legs, apply the same multiplier to all sub-segments to maintain proportionality
-  let segments: SegmentLengths = {
-    height,
-    headNeck: height * ratios.headNeck, // Head/neck not modified
-    torso: height * ratios.torso * torsoMultiplier,
-    upperArm: height * ratios.upperArm * armMultiplier,
-    forearm: height * ratios.forearm * armMultiplier,
-    hand: height * ratios.hand * armMultiplier,
-    femur: height * ratios.femur * legMultiplier,
-    tibia: height * ratios.tibia * legMultiplier,
-    footHeight: height * ratios.footHeight * legMultiplier,
+  // Helper to convert SD number to grid key
+  const toKey = (n: number): "minus1" | "0" | "1" => {
+    if (n <= -1) return "minus1";
+    if (n >= 1) return "1";
+    return "0";
   };
+
+  // Resolve Archetype Ratios
+  // legSD maps to row (femur/torso), armSD maps to col (arm)
+  // We consolidate inputs to the 3x3 grid (-1, 0, 1)
+  const rowKey = toKey(legSD);
+  const colKey = toKey(armSD);
+
+  // Safe lookup with fallback
+  const grid = sex === Sex.FEMALE ? ARCHETYPE_GRID_FEMALE : ARCHETYPE_GRID_MALE;
+
+  // Safe lookup with fallback
+  const archetype = grid[rowKey]?.[colKey];
+
+  let segments: SegmentLengths;
+
+  if (archetype) {
+    const archRatios = archetype.ratios;
+
+    // Apply specific ratios from archetype
+    // Arm ratio represents wingspan scaling relative to height (1.0 = height)
+    // Standard arm segments sum to ~0.43-0.45 * height per arm roughly
+    // We scale the standard arm segments by the arm ratio
+    const armScale = archRatios.arm;
+
+    // Calculate specific lengths from archetype
+    // We scale the ENTIRE leg assembly (Femur + Tibia + Foot) proportionally
+    // This allows leg/torso ratio changes to affect the whole limb, not just the thigh
+    const specificFemur = height * archRatios.femur;
+    const standardFemur = height * ratios.femur;
+    const legScale = specificFemur / standardFemur;
+
+    const specificTorso = height * archRatios.torso;
+
+    segments = {
+      height,
+      headNeck: height * ratios.headNeck,
+      torso: specificTorso,
+      upperArm: height * ratios.upperArm * armScale,
+      forearm: height * ratios.forearm * armScale,
+      hand: height * ratios.hand * armScale,
+
+      femur: specificFemur,
+      tibia: height * ratios.tibia * legScale,
+      footHeight: height * ratios.footHeight * legScale,
+      footLength: height * ratios.footLength * legScale,
+    };
+
+  } else {
+    // Fallback to legacy SD logic
+    const armMultiplier = 1 + armSD * SD_MULTIPLIER_COEFFICIENT;
+    const legMultiplier = 1 + legSD * SD_MULTIPLIER_COEFFICIENT;
+    const torsoMultiplier = 1 + torsoSD * SD_MULTIPLIER_COEFFICIENT;
+
+    segments = {
+      height,
+      headNeck: height * ratios.headNeck,
+      torso: height * ratios.torso * torsoMultiplier,
+      upperArm: height * ratios.upperArm * armMultiplier,
+      forearm: height * ratios.forearm * armMultiplier,
+      hand: height * ratios.hand * armMultiplier,
+      femur: height * ratios.femur * legMultiplier,
+      tibia: height * ratios.tibia * legMultiplier,
+      footHeight: height * ratios.footHeight * legMultiplier,
+      footLength: height * ratios.footLength * legMultiplier,
+    };
+  }
 
   // Normalize to ensure segments sum to target height
   segments = normalizeToHeight(segments, height);
@@ -153,7 +272,7 @@ export function createProfileFromProportions(
   const derived = computeDerivedAnthropometry(segments, height);
 
   return {
-    mode: AnthropometryMode.SIMPLE, // Use simple mode since this is for quick comparison
+    mode: AnthropometryMode.SIMPLE,
     sex,
     mass,
     segments,
@@ -202,6 +321,7 @@ export function normalizeToHeight(
     femur: segments.femur * scaleFactor,
     tibia: segments.tibia * scaleFactor,
     footHeight: segments.footHeight * scaleFactor,
+    footLength: segments.footLength * scaleFactor,
   };
 }
 

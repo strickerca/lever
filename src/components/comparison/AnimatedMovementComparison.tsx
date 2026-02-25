@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Anthropometry, KinematicSolution, LiftFamily } from "@/types";
 import { Play, Pause, RotateCcw } from "lucide-react";
+import { STANDARD_PLATE_RADIUS } from "@/lib/biomechanics/constants";
 
 interface AnimatedMovementComparisonProps {
   lifterA: {
@@ -33,12 +34,15 @@ interface AnimationFrame {
   };
 }
 
+type ReadonlyAnimationFrame = Readonly<AnimationFrame>;
+
 export function AnimatedMovementComparison({
   lifterA,
   lifterB,
   liftFamily,
   variant,
 }: AnimatedMovementComparisonProps) {
+  const movementLabel = `${liftFamily} (${variant})`;
   const canvasRefA = useRef<HTMLCanvasElement>(null);
   const canvasRefB = useRef<HTMLCanvasElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -60,7 +64,7 @@ export function AnimatedMovementComparison({
       return [];
     }
 
-    const frames: AnimationFrame[] = [];
+  const frames: AnimationFrame[] = [];
     const segments = anthropometry.segments;
 
     // Generate frames for descent (0 to 0.5) and ascent (0.5 to 1)
@@ -103,7 +107,7 @@ export function AnimatedMovementComparison({
       const knee = {
         x: bottomKnee.x * t,
         y: segments.footHeight + segments.tibia +
-           (bottomKnee.y - (segments.footHeight + segments.tibia)) * t,
+          (bottomKnee.y - (segments.footHeight + segments.tibia)) * t,
       };
 
       const hip = {
@@ -142,13 +146,14 @@ export function AnimatedMovementComparison({
     return frames;
   };
 
-  const framesA = generateFrames(lifterA.anthropometry, lifterA.kinematics);
-  const framesB = generateFrames(lifterB.anthropometry, lifterB.kinematics);
+  const hasFrames = Boolean(
+    lifterA.kinematics?.valid && lifterB.kinematics?.valid
+  );
 
   // Draw bar path trajectory
   const drawBarPath = (
     ctx: CanvasRenderingContext2D,
-    frames: AnimationFrame[],
+    frames: ReadonlyArray<ReadonlyAnimationFrame>,
     color: string,
     scale: number,
     offsetX: number,
@@ -178,10 +183,133 @@ export function AnimatedMovementComparison({
     ctx.setLineDash([]);
   };
 
-  // Draw stick figure
-  const drawStickFigure = (
+  const drawRibCageSideView = useCallback((
     ctx: CanvasRenderingContext2D,
-    frame: AnimationFrame,
+    spineFrom: { x: number; y: number },
+    spineTo: { x: number; y: number },
+    facingHint: { ankle: { x: number; y: number }; knee: { x: number; y: number } },
+    color: string,
+    baseLineWidth: number
+  ) => {
+    const boneStroke = "rgba(255, 255, 255, 0.9)";
+    const dx = spineTo.x - spineFrom.x;
+    const dy = spineTo.y - spineFrom.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 6) return;
+
+    const angle = Math.atan2(dy, dx);
+
+    const facingDx = facingHint.knee.x - facingHint.ankle.x;
+    const frontSign = Math.abs(facingDx) < 1e-6 ? 1 : Math.sign(facingDx);
+
+    const ribStroke = Math.max(1, baseLineWidth * 0.55);
+    const ribCount = 10;
+
+    const thoracicStart = len * 0.26;
+    const thoracicEnd = len * 0.86;
+    const thoracicLen = thoracicEnd - thoracicStart;
+    const chestDepthMax = len * 0.3;
+
+    ctx.save();
+    ctx.translate(spineFrom.x, spineFrom.y);
+    ctx.rotate(angle);
+
+    // Subtle outer contour so the cage reads as round, not boxy.
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.strokeStyle = boneStroke;
+    ctx.lineWidth = Math.max(1, ribStroke * 0.9);
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    const outlineRadiusY = chestDepthMax * 0.55;
+    const outlineCenterY = frontSign * outlineRadiusY;
+    const outlineCenterX = (thoracicStart + thoracicEnd) / 2 - len * 0.01;
+    const outlineRadiusX = (thoracicLen / 2) * 1.06;
+    ctx.beginPath();
+    ctx.ellipse(
+      outlineCenterX,
+      outlineCenterY,
+      outlineRadiusX,
+      outlineRadiusY,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.stroke();
+    ctx.restore();
+
+    const sternumPoints: Array<{ x: number; y: number }> = [];
+
+    // Near-side ribs
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = boneStroke;
+    ctx.lineWidth = ribStroke;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    for (let i = 0; i < ribCount; i++) {
+      const t = i / (ribCount - 1);
+      const x = thoracicStart + (thoracicEnd - thoracicStart) * t;
+      const bulge = Math.sin(Math.PI * t);
+
+      // Rounded depth profile (narrow at ends, fullest mid-thorax).
+      const depth = chestDepthMax * (0.55 + 0.45 * bulge);
+      const sternumY = frontSign * depth;
+
+      // Lower ribs slope down more toward the sternum (matches lateral-view reference).
+      const drop = len * (0.06 + 0.025 * (1 - t));
+      const endX = x - drop;
+      sternumPoints.push({ x: endX, y: sternumY });
+
+      // Bezier arc to read as "round" instead of a flat slat.
+      const c1x = x - drop * 0.18;
+      const c1y = sternumY * (0.28 + 0.22 * bulge);
+      const c2x = x - drop * 0.78;
+      const c2y = sternumY * (0.92 + 0.06 * bulge);
+
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, endX, sternumY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Sternum (curved through rib endpoints)
+    if (sternumPoints.length >= 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = boneStroke;
+      ctx.lineWidth = ribStroke * 1.15;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+
+      ctx.beginPath();
+      ctx.moveTo(sternumPoints[0].x, sternumPoints[0].y);
+      for (let i = 1; i < sternumPoints.length; i++) {
+        const prev = sternumPoints[i - 1];
+        const curr = sternumPoints[i];
+        const midX = (prev.x + curr.x) / 2;
+        const midY = (prev.y + curr.y) / 2;
+        ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+      }
+      const last = sternumPoints[sternumPoints.length - 1];
+      ctx.lineTo(last.x, last.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }, []);
+
+  // Draw stick figure
+  const drawStickFigure = useCallback((
+    ctx: CanvasRenderingContext2D,
+    frame: ReadonlyAnimationFrame,
     color: string,
     scale: number,
     offsetX: number,
@@ -202,37 +330,73 @@ export function AnimatedMovementComparison({
     const head = toPixels(positions.head);
     const bar = toPixels(positions.bar);
 
-    // Draw segments
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    const boneStroke = "rgba(255, 255, 255, 0.9)";
+    const segmentWidth = 3;
+
+    const strokeWithGlow = (path: () => void, width: number) => {
+      // Glow pass
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width + 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      path();
+      ctx.stroke();
+      ctx.restore();
+
+      // Bone pass
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = boneStroke;
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      path();
+      ctx.stroke();
+      ctx.restore();
+    };
 
     // Legs
-    ctx.beginPath();
-    ctx.moveTo(ankle.x, ankle.y);
-    ctx.lineTo(knee.x, knee.y);
-    ctx.lineTo(hip.x, hip.y);
-    ctx.stroke();
+    strokeWithGlow(() => {
+      ctx.moveTo(ankle.x, ankle.y);
+      ctx.lineTo(knee.x, knee.y);
+      ctx.lineTo(hip.x, hip.y);
+    }, segmentWidth);
+
+    // Rib cage (2D conversion of the 3D reference, lateral view)
+    drawRibCageSideView(ctx, hip, shoulder, { ankle, knee }, color, segmentWidth);
 
     // Torso
-    ctx.beginPath();
-    ctx.moveTo(hip.x, hip.y);
-    ctx.lineTo(shoulder.x, shoulder.y);
-    ctx.stroke();
-
-    // Head
-    ctx.beginPath();
-    ctx.moveTo(shoulder.x, shoulder.y);
-    ctx.lineTo(head.x, head.y);
-    ctx.stroke();
+    strokeWithGlow(() => {
+      ctx.moveTo(hip.x, hip.y);
+      ctx.lineTo(shoulder.x, shoulder.y);
+    }, segmentWidth);
 
     // Draw joints
     const drawJoint = (point: { x: number; y: number }, radius: number = 5) => {
-      ctx.fillStyle = color;
+      ctx.save();
+      ctx.fillStyle = boneStroke;
       ctx.beginPath();
       ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, radius * 0.35);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     };
 
     drawJoint(ankle);
@@ -240,29 +404,51 @@ export function AnimatedMovementComparison({
     drawJoint(hip);
     drawJoint(shoulder);
 
-    // Draw head as circle
-    ctx.fillStyle = color;
+    // Head (simple circle)
+    const headRadius = Math.max(10, scale * 0.06);
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
     ctx.beginPath();
-    ctx.arc(head.x, head.y, 8, 0, Math.PI * 2);
+    ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw bar
-    ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = 4;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.4, headRadius * 0.08);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+    ctx.globalAlpha = 0.35;
     ctx.beginPath();
-    ctx.moveTo(bar.x - 40, bar.y);
-    ctx.lineTo(bar.x + 40, bar.y);
+    ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+
+    // Barbell (side view plate)
+    const plateRadiusPx = STANDARD_PLATE_RADIUS * scale;
+    ctx.save();
+    ctx.shadowColor = "#00F0FF";
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = "#00F0FF";
+    ctx.fillStyle = "rgba(0, 240, 255, 0.15)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(bar.x, bar.y, plateRadiusPx, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
 
-    // Draw bar ends (plates)
-    ctx.fillStyle = "#374151";
-    ctx.fillRect(bar.x - 45, bar.y - 8, 10, 16);
-    ctx.fillRect(bar.x + 35, bar.y - 8, 10, 16);
-  };
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(bar.x, bar.y, plateRadiusPx * 0.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }, [drawRibCageSideView]);
 
   // Animation loop
   useEffect(() => {
-    if (!isPlaying || framesA.length === 0 || framesB.length === 0) return;
+    if (!isPlaying || !hasFrames) return;
 
     const animate = (timestamp: number) => {
       if (lastTimeRef.current === 0) {
@@ -286,16 +472,20 @@ export function AnimatedMovementComparison({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, speed, TOTAL_FRAMES, FRAME_DURATION, framesA.length, framesB.length]);
+  }, [isPlaying, speed, TOTAL_FRAMES, FRAME_DURATION, hasFrames]);
 
   // Render frames
   useEffect(() => {
+    if (!hasFrames) return;
+
+    const framesA = generateFrames(lifterA.anthropometry, lifterA.kinematics);
+    const framesB = generateFrames(lifterB.anthropometry, lifterB.kinematics);
     if (framesA.length === 0 || framesB.length === 0) return;
 
     const renderCanvas = (
       canvas: HTMLCanvasElement,
-      frames: AnimationFrame[],
-      frame: AnimationFrame,
+      frames: ReadonlyArray<ReadonlyAnimationFrame>,
+      frame: ReadonlyAnimationFrame,
       color: string,
       kinematics?: KinematicSolution
     ) => {
@@ -303,10 +493,28 @@ export function AnimatedMovementComparison({
       if (!ctx) return;
 
       // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Grid background (match main animation)
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      ctx.lineWidth = 1;
+      const step = 50;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += step) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+      }
+      for (let y = 0; y <= canvas.height; y += step) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+      }
+      ctx.stroke();
+      ctx.restore();
 
       // Draw ground line
-      ctx.strokeStyle = "#d1d5db";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height - 30);
@@ -326,7 +534,7 @@ export function AnimatedMovementComparison({
 
       // Draw key metrics overlay
       if (kinematics) {
-        ctx.fillStyle = "#374151";
+        ctx.fillStyle = "#94a3b8"; // slate-400
         ctx.font = "12px sans-serif";
         ctx.fillText(`ROM: ${(kinematics.displacement * 100).toFixed(1)} cm`, 10, 20);
         ctx.fillText(`Hip Moment Arm: ${(kinematics.momentArms.hip * 100).toFixed(1)} cm`, 10, 35);
@@ -336,13 +544,13 @@ export function AnimatedMovementComparison({
     };
 
     if (canvasRefA.current && framesA[currentFrame]) {
-      renderCanvas(canvasRefA.current, framesA, framesA[currentFrame], "#2563eb", lifterA.kinematics);
+      renderCanvas(canvasRefA.current, framesA, framesA[currentFrame], "#00E5FF", lifterA.kinematics);
     }
 
     if (canvasRefB.current && framesB[currentFrame]) {
-      renderCanvas(canvasRefB.current, framesB, framesB[currentFrame], "#ea580c", lifterB.kinematics);
+      renderCanvas(canvasRefB.current, framesB, framesB[currentFrame], "#FF4081", lifterB.kinematics);
     }
-  }, [currentFrame, framesA, framesB, lifterA.kinematics, lifterB.kinematics]);
+  }, [currentFrame, hasFrames, lifterA.anthropometry, lifterA.kinematics, lifterB.anthropometry, lifterB.kinematics, drawStickFigure]);
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -357,40 +565,40 @@ export function AnimatedMovementComparison({
     lastTimeRef.current = 0;
   };
 
-  if (framesA.length === 0 || framesB.length === 0) {
+  if (!hasFrames) {
     return null;
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6 border-2 border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        Animated Movement Comparison
+    <div className="bg-slate-900/50 backdrop-blur-sm rounded-lg shadow-sm border border-slate-700 p-6">
+      <h3 className="text-lg font-semibold text-white mb-4">
+        Animated Movement Comparison: {movementLabel}
       </h3>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         {/* Lifter A Animation */}
         <div>
-          <h4 className="text-sm font-medium text-blue-600 mb-2">
+          <h4 className="text-sm font-medium mb-2" style={{ color: "#00E5FF" }}>
             {lifterA.name}
           </h4>
           <canvas
             ref={canvasRefA}
             width={300}
             height={400}
-            className="border border-gray-200 rounded-lg bg-gray-50"
+            className="border border-slate-700 rounded-lg bg-slate-950"
           />
         </div>
 
         {/* Lifter B Animation */}
         <div>
-          <h4 className="text-sm font-medium text-orange-600 mb-2">
+          <h4 className="text-sm font-medium mb-2" style={{ color: "#FF4081" }}>
             {lifterB.name}
           </h4>
           <canvas
             ref={canvasRefB}
             width={300}
             height={400}
-            className="border border-gray-200 rounded-lg bg-gray-50"
+            className="border border-slate-700 rounded-lg bg-slate-950"
           />
         </div>
       </div>
@@ -416,18 +624,18 @@ export function AnimatedMovementComparison({
 
         <button
           onClick={handleReset}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
         >
           <RotateCcw className="w-4 h-4" />
           Reset
         </button>
 
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700">Speed:</label>
+          <label className="text-sm font-medium text-slate-300">Speed:</label>
           <select
             value={speed}
             onChange={(e) => setSpeed(Number(e.target.value))}
-            className="px-2 py-1 border border-gray-300 rounded text-sm"
+            className="px-2 py-1 bg-slate-950 border border-slate-700 text-white rounded text-sm"
           >
             <option value={0.5}>0.5x</option>
             <option value={1}>1x</option>

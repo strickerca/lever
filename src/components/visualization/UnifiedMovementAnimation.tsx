@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, RotateCcw, Flame, Gauge } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Play, Pause, RotateCcw, Flame, Settings2, X } from "lucide-react";
 import { LiftFamily, Anthropometry, LiftMetrics, Sex, LiftData, ComparisonResult } from "@/types";
 import { createPoseSolver, getThrusterROMParts } from "@/lib/animation/movements";
 import { getAnimationPhase, calculateRepCycle } from "@/lib/animation/Animator";
@@ -13,11 +13,9 @@ import {
   PULLUP_BAR_WIDTH_M,
 } from "@/lib/animation/constants";
 import { STANDARD_PLATE_RADIUS, SEGMENT_MASS_RATIOS } from "@/lib/biomechanics/constants";
-import { ForceVelocitySlider } from "./ForceVelocitySlider";
 import { LifterPanel } from "./LifterPanel";
 import { LiftSelector } from "../comparison/LiftSelector";
 import { PostSimulationStats } from "../results/PostSimulationStats";
-import { Settings2, X, RefreshCw } from "lucide-react";
 
 interface UnifiedMovementAnimationProps {
   lifterA: {
@@ -172,6 +170,7 @@ export function UnifiedMovementAnimation({
 }: UnifiedMovementAnimationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const drawFrameRef = useRef<(currentSimTime: number) => void>(() => {});
   const startTimeRef = useRef<number>(0);
   const currentTimeRef = useRef<number>(0); // NEW: Optimization ref
 
@@ -188,10 +187,12 @@ export function UnifiedMovementAnimation({
   const [currentTime, setCurrentTime] = useState(0); // Keep for UI sync (scrubber) if needed, but rarely used now.
   // Actually, we can remove 'currentTime' state usage in the loop.
   // We'll keep it for initialized state.
-  const [velocityUnit, setVelocityUnit] = useState<"metric" | "imperial">("metric");
+  const [velocityUnit] = useState<"metric" | "imperial">("metric");
   const [syncByTime, setSyncByTime] = useState(false);
   // Initialize with placeholder, will be updated by useEffect on mount/change
-  const [timeInput, setTimeInput] = useState("0.00");
+  const [timeInput, setTimeInput] = useState(() =>
+    initialTime > 0 ? initialTime.toFixed(2) : "0.00"
+  );
   const [renderError, setRenderError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [animationFinished, setAnimationFinished] = useState(false);
@@ -266,13 +267,13 @@ export function UnifiedMovementAnimation({
   useEffect(() => {
     setVelocityA_ms(0.55);
     setVelocityB_ms(0.55);
-    setTimeInput(standardTime.toFixed(2));
+    setTimeInput((initialTime > 0 ? initialTime : standardTime).toFixed(2));
     setSyncByTime(false);
     setIsPlaying(false);
     startTimeRef.current = 0;
     setCurrentTime(0);
     currentTimeRef.current = 0;
-  }, [movement, repsA, repsB, standardTime]);
+  }, [movement, repsA, repsB, standardTime, initialTime]);
 
   const parsedTimeInput = parseFloat(timeInput);
   const targetTimeSeconds =
@@ -407,7 +408,7 @@ export function UnifiedMovementAnimation({
   const timeA = (romA * repsA * 2) / velocityA;
   const timeB = (romB * repsB * 2) / velocityB;
 
-  const handlePlayPause = () => {
+  const handlePlayPause = useCallback(() => {
     if (renderError) return;
 
     // Auto-restart if we are at the end
@@ -425,7 +426,7 @@ export function UnifiedMovementAnimation({
       setAnimationFinished(false);
     }
     setIsPlaying(!isPlaying);
-  };
+  }, [isPlaying, renderError, timeA, timeB]);
 
   // Spacebar Interaction
   useEffect(() => {
@@ -437,7 +438,7 @@ export function UnifiedMovementAnimation({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isPlaying, currentTime, renderError, handlePlayPause]);
+  }, [handlePlayPause]);
 
   // Power calculations (use metrics.totalWork isntead of passed work prop) - ensure positive
   const powerA = Math.abs(metricsA.totalWork) / timeA;
@@ -475,66 +476,13 @@ export function UnifiedMovementAnimation({
     const current = parseFloat(velocityInputA);
     if (!isNaN(current) && Math.abs(current - displayVelocityA) < 0.01) return;
     setVelocityInputA(displayVelocityA.toFixed(2));
-  }, [velocityUnit, displayVelocityA]);
+  }, [velocityUnit, displayVelocityA, velocityInputA]);
 
   useEffect(() => {
     const current = parseFloat(velocityInputB);
     if (!isNaN(current) && Math.abs(current - displayVelocityB) < 0.01) return;
     setVelocityInputB(displayVelocityB.toFixed(2));
-  }, [velocityUnit, displayVelocityB]);
-
-  // Animation loop
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    const animate = (timestamp: number) => {
-      if (startTimeRef.current === 0) {
-        // Calculate the "virtual" start time based on where we currently are in the animation
-        startTimeRef.current = timestamp - (currentTime * 1000);
-      }
-
-      const elapsed = (timestamp - startTimeRef.current) / 1000;
-      setCurrentTime(elapsed);
-
-      const maxTime = Math.max(timeA, timeB);
-      if (elapsed >= maxTime) {
-        // Calculate progress here to use in the condition
-        const progressA = elapsed >= timeA ? 1 : elapsed / timeA;
-        const progressB = elapsed >= timeB ? 1 : elapsed / timeB;
-
-        if (progressA >= 1.0 && progressB >= 1.0) {
-          setIsPlaying(false);
-          setCurrentTime(maxTime); // Ensure current time is set to max
-          // Show results if we have them (assuming 'result' is available in scope or passed)
-          // Note: 'result' is not defined in this scope. Assuming it refers to a state or prop.
-          // For now, I'll assume `true` for demonstration or that `result` will be defined elsewhere.
-          // If `result` is meant to be `metricsA` or `metricsB` or a combined result, it needs to be clarified.
-          // For now, I'll use a placeholder `true` or remove the `if (result)` if it's not meant to be a specific variable.
-          // Given the context, `setShowResults(true)` is likely intended to always happen when both are complete.
-          setAnimationFinished(true);
-          // setShowResults(true); // Changed: User initiates this manually now
-          return;
-        }
-        // If elapsed >= maxTime but not both progress are 1.0, continue playing until both are 1.0
-        // This case should ideally not happen if maxTime is correctly calculated based on both.
-        // However, if one finishes much earlier, this logic might be intended to wait for the slower one.
-        // For now, I'll keep the original behavior for the `elapsed >= maxTime` case if the new condition isn't met.
-        setIsPlaying(false);
-        setCurrentTime(maxTime);
-        return;
-      }
-
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
-
-    animationFrameRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isPlaying, timeA, timeB]);
+  }, [velocityUnit, displayVelocityB, velocityInputB]);
 
   // ---------------------------------------------------------------------------
   // OPTIMIZED DRAWING LOOP
@@ -646,10 +594,10 @@ export function UnifiedMovementAnimation({
       // Simplified Draw calls (Single Pass for now to ensure function valid)
       if (resultA.valid) {
         // eslint-disable-next-line react-hooks/immutability
-        drawFigure(ctx, resultA.pose, spacing, floorY, scale, colorRefA.current, lifterA.name, lifterA.anthropometry, movement, optionsA);
+        drawFigure(ctx, resultA.pose, spacing, floorY, scale, colorRefA.current, lifterA.name, lifterA.anthropometry, movement);
       }
       if (resultB.valid) {
-        drawFigure(ctx, resultB.pose, spacing * 3, floorY, scale, colorRefB.current, lifterB.name, lifterB.anthropometry, movement, optionsB);
+        drawFigure(ctx, resultB.pose, spacing * 3, floorY, scale, colorRefB.current, lifterB.name, lifterB.anthropometry, movement);
       }
 
 
@@ -676,8 +624,6 @@ export function UnifiedMovementAnimation({
         isFinished: boolean,
         color: string
       ) => {
-        const size = 60;
-
         ctx.save();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -731,11 +677,15 @@ export function UnifiedMovementAnimation({
     }
   };
 
+  useEffect(() => {
+    drawFrameRef.current = drawFrame;
+  });
+
   // High-performance Animation Loop
   useEffect(() => {
     if (!isPlaying) {
       // When paused, draw static frame at current Ref time
-      drawFrame(currentTimeRef.current);
+      drawFrameRef.current(currentTimeRef.current);
       return;
     }
 
@@ -750,7 +700,7 @@ export function UnifiedMovementAnimation({
       const maxTime = Math.max(timeA, timeB);
 
       // Draw frame
-      drawFrame(elapsed);
+      drawFrameRef.current(elapsed);
 
       // Check finish
       if (elapsed >= maxTime) {
@@ -780,9 +730,9 @@ export function UnifiedMovementAnimation({
   // Effect to re-draw when non-playing parameters change
   useEffect(() => {
     if (!isPlaying) {
-      drawFrame(currentTimeRef.current);
+      drawFrameRef.current(currentTimeRef.current);
     }
-  }, [movement, optionsA, optionsB, lifterA, lifterB, timeA, timeB, romA, romB, thrusterRomPartsA, thrusterRomPartsB]);
+  }, [movement, optionsA, optionsB, lifterA, lifterB, timeA, timeB, romA, romB, thrusterRomPartsA, thrusterRomPartsB, isPlaying]);
 
 
   function drawEquipment(
@@ -859,22 +809,12 @@ export function UnifiedMovementAnimation({
     anthropometry: Anthropometry,
     load: number
   ): number {
-    // Segment mass fractions (De Leva / Winter simplified)
-    const M_TRUNK = 0.50; // Head + Trunk + Arms (simplified upper body block)
-    const M_THIGHS = 0.20;
-    const M_SHANKS = 0.10;
-    // Feet ~0.03 (neglect or assume fixed at 0)
-    // Remaining ~0.17 distributed or approximate.
-    // Let's normalize to 1.0 body mass for simplicity.
-    // Better: Trunk+Head(58%), Arms(10%), Thighs(20%), Shanks(9%), Feet(3%).
-
     const mBody = anthropometry.mass;
 
     // Centers of Mass (X coordinates)
     // 1. Trunk (Midpoint Shoulder-Hip)
     // For Bench, we force the body segments to be centered (X=0) because the "pose" provided by the solver
     // only represents the right-side vector, but the physical body is symmetric around X=0.
-    const isBench = pose.bar && pose.bar.y > 0 && Math.abs(pose.hip.x) < 0.01; // Quick heuristc or use prop?
     // Actually we don't have 'movement' passed here efficiently, but we can check if hip.x is 0 (Bench/Squat center) 
     // and shoulder is offset. Wait, Bench hip is 0, Shoulder is 0.22.
     // Squat: Hip 0, Shoulder 0? (Side view).
@@ -1020,8 +960,7 @@ export function UnifiedMovementAnimation({
     color: string,
     label: string,
     anthropometry: Anthropometry,
-    movement: LiftFamily,
-    options: MovementOptions
+    movement: LiftFamily
   ) {
     const toCanvas = (pos: { x: number; y: number }) => ({
       x: offsetX + pos.x * scale,
@@ -1418,11 +1357,6 @@ export function UnifiedMovementAnimation({
       ctx.restore();
     };
 
-    // --- SHELL RENDERER (Outer Layer) ---
-    const drawShell = (from: { x: number; y: number }, to: { x: number; y: number }, widthM: number) => {
-      // Disabled
-    };
-
     // --- ORB RENDERER ---
     const drawOrb = (p: { x: number; y: number }, radius: number, glowColor: string) => {
       const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
@@ -1493,8 +1427,8 @@ export function UnifiedMovementAnimation({
       const hipR = { x: hip.x + hipWidthPx / 2, y: hip.y };
       const neck = toCanvas({ x: 0, y: pose.shoulder.y });
 
-      // Torso - Pass rThigh for width matching!
-      renderLimb(hip, neck, rThigh, true); // Spine
+      // Torso - width based on torso segment mass/length.
+      renderLimb(hip, neck, rTorso, true); // Spine
 
       // Shoulders/Clavicle (Approx)
       renderLimb(toCanvas(mirror(pose.shoulder)), shoulder, rArm * 0.6);
@@ -1570,8 +1504,8 @@ export function UnifiedMovementAnimation({
         renderLimb(heel, toe, rFoot * 0.75); // Metatarsals
       }
 
-      // 3. Torso - Pass rThigh for width matching
-      renderLimb(hip, shoulder, rThigh, true);
+      // 3. Torso - width based on torso segment mass/length
+      renderLimb(hip, shoulder, rTorso, true);
 
       // 4. Arm
       if (elbow && wrist) {
@@ -1707,28 +1641,6 @@ export function UnifiedMovementAnimation({
     }
   }
 
-  function drawProgressBar(
-    ctx: CanvasRenderingContext2D,
-    progress: number,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    color: string
-  ) {
-    ctx.fillStyle = "#E5E7EB";
-    ctx.fillRect(x, y, width, height);
-
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, width * progress, height);
-
-    ctx.strokeStyle = "#9CA3AF";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, width, height);
-  }
-
-
-
   return (
     <div className="w-full">
       {/* 3-Column Command Center Layout */}
@@ -1740,7 +1652,7 @@ export function UnifiedMovementAnimation({
             name={lifterA.name}
             lifterKey="lifterA"
             velocityValue={syncByTime ? velocityA : velocityA_ms}
-            onVelocityChange={setVelocityA_ms}
+            onVelocityChange={handleGaugeChangeA}
             velocityInputValue={velocityInputA}
             onVelocityInputChange={handleVelocityChangeA}
             onVelocityBlur={handleVelocityBlurA}
@@ -1748,10 +1660,6 @@ export function UnifiedMovementAnimation({
             isSyncEnabled={syncByTime}
             displayPower={powerA}
             displayCalories={dynamicCaloriesA}
-            displayTime={timeA}
-            displayDistance={velocityUnit === "metric" ? romA * 2 : romA * 2 * 3.28084}
-            liftData={liftDataA}
-            onLiftDataChange={onLiftDataChangeA}
           />
         </div>
 
@@ -1776,10 +1684,11 @@ export function UnifiedMovementAnimation({
           </div>
 
           {/* TOP CONTROLS: Playback, Sync & Scrubber */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute top-4 right-6 flex flex-col items-end gap-3 z-30 pointer-events-auto"
-          >
+          {!hideControls && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-4 right-6 flex flex-col items-end gap-3 z-30 pointer-events-auto"
+            >
 
             {/* Control Buttons Row */}
             <div className="flex items-center gap-4">
@@ -1861,7 +1770,8 @@ export function UnifiedMovementAnimation({
               />
             </div>
 
-          </div>
+            </div>
+          )}
 
           {/* CANVAS */}
           <canvas
@@ -1872,10 +1782,11 @@ export function UnifiedMovementAnimation({
           />
 
           {/* BOTTOM DECKS: Configuration Inputs */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute bottom-4 left-6 right-6 flex flex-col items-center gap-4 z-30 pointer-events-auto"
-          >
+          {!hideControls && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-4 left-6 right-6 flex flex-col items-center gap-4 z-30 pointer-events-auto"
+            >
             {/* Central Lift Type Selector (Row 1) */}
             {onLiftFamilyChange && (
               <div className="flex-0 w-48 bg-slate-950/60 backdrop-blur-md border border-slate-800/50 rounded-2xl p-2 shadow-xl h-fit">
@@ -1949,7 +1860,8 @@ export function UnifiedMovementAnimation({
                 )}
               </div>
             </div>
-          </div>
+            </div>
+          )}
 
 
 
@@ -1969,10 +1881,6 @@ export function UnifiedMovementAnimation({
             isSyncEnabled={syncByTime}
             displayPower={powerB}
             displayCalories={dynamicCaloriesB}
-            displayTime={timeB}
-            displayDistance={velocityUnit === "metric" ? romB * 2 : romB * 2 * 3.28084}
-            liftData={liftDataB}
-            onLiftDataChange={onLiftDataChangeB}
           />
         </div>
 

@@ -2,10 +2,15 @@ import { useState, useEffect } from "react";
 import { useDebounce } from "use-debounce";
 import { compareLifts } from "@/lib/biomechanics/comparison";
 import { createProfileFromProportions, createProfileFromSegments } from "@/lib/biomechanics/anthropometry";
-import { ComparisonResult, LiftFamily, Sex } from "@/types";
-import { validateLifterInputs, validateLiftInputs, getErrorMessage } from "@/lib/validation";
+import {
+    ComparisonResult,
+    LiftFamily,
+    Sex,
+    TorsoLegProportion,
+    ArmProportion,
+} from "@/types";
+import { validateLifterInputs, validateLiftInputs } from "@/lib/validation";
 import { TORSO_LEG_TO_SD, ARM_PROPORTION_TO_SD } from "@/lib/archetypes";
-import { TorsoLegProportion, ArmProportion } from "@/components/anthropometry/BuildInput";
 
 export interface ComparisonInputs {
     lifterA: {
@@ -171,9 +176,10 @@ export function useLiveComparison(inputs: ComparisonInputs) {
 
                 setResult(comparisonResult);
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Comparison calculation error:", err);
-                setError(err.message || "An unexpected error occurred during calculation.");
+                const message = err instanceof Error ? err.message : "An unexpected error occurred during calculation.";
+                setError(message);
             } finally {
                 setIsCalculating(false);
             }

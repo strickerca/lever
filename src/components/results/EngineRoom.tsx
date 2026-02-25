@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { UnifiedMovementAnimation } from "@/components/visualization/UnifiedMovementAnimation";
 import { ComparisonResult, LiftData, LiftFamily } from "@/types";
 import { ComparisonInputs } from "@/hooks/useLiveComparison";
-import { Flame, Gauge } from "lucide-react";
+import { MovementOptions } from "@/lib/animation/types";
 
 interface EngineRoomProps {
     result: ComparisonResult;
@@ -16,22 +15,32 @@ export function EngineRoom({ result, inputs, onLiftDataChangeA, onLiftDataChange
     const { lifterA, lifterB } = result;
 
     // Helper to map generic lift data to specific MovementOptions
-    const mapToOptions = (data: any /* LiftData */, family: string) => {
+    const mapToOptions = (data: ComparisonInputs["liftDataA"]): MovementOptions => {
+        const [benchGripRaw, benchArchRaw] = data.variant.split("-");
+
         return {
             load: data.load,
-            reps: data.reps,
-            squatVariant: family === 'squat' ? data.variant : undefined,
-            squatStance: family === 'squat' ? data.stance : undefined,
-            squatDepth: family === 'squat' ? data.squatDepth : undefined,
-            deadliftVariant: family === 'deadlift' ? data.variant : undefined,
-            sumoStance: family === 'deadlift' ? data.stance : undefined,
-            deadliftBarOffset: family === 'deadlift' ? data.barStartHeightOffset : undefined,
-            benchGrip: family === 'bench' ? data.variant.split("-")[0] : undefined,
-            benchArch: family === 'bench' ? data.variant.split("-")[1] : undefined,
-            pullupGrip: family === 'pullup' ? data.variant : undefined,
-            pushupWidth: family === 'pushup' ? (data.variant === "standard" ? "normal" : data.variant) : undefined,
-            pushupWeight: family === 'pushup' ? data.pushupWeight : undefined,
-            chestSize: (family === 'bench' || family === 'pushup') ? data.chestSize : undefined,
+            squatVariant: data.liftFamily === LiftFamily.SQUAT ? (data.variant as MovementOptions["squatVariant"]) : undefined,
+            squatStance: data.liftFamily === LiftFamily.SQUAT ? (data.stance as MovementOptions["squatStance"]) : undefined,
+            squatDepth:
+                data.liftFamily === LiftFamily.SQUAT
+                    ? (data.squatDepth as MovementOptions["squatDepth"])
+                    : undefined,
+            deadliftVariant: data.liftFamily === LiftFamily.DEADLIFT ? (data.variant as MovementOptions["deadliftVariant"]) : undefined,
+            sumoStance: data.liftFamily === LiftFamily.DEADLIFT ? (data.stance as MovementOptions["sumoStance"]) : undefined,
+            deadliftBarOffset: data.liftFamily === LiftFamily.DEADLIFT ? data.barStartHeightOffset : undefined,
+            benchGrip: data.liftFamily === LiftFamily.BENCH ? (benchGripRaw as MovementOptions["benchGrip"]) : undefined,
+            benchArch: data.liftFamily === LiftFamily.BENCH ? (benchArchRaw as MovementOptions["benchArch"]) : undefined,
+            pullupGrip: data.liftFamily === LiftFamily.PULLUP ? (data.variant as MovementOptions["pullupGrip"]) : undefined,
+            pushupWidth:
+                data.liftFamily === LiftFamily.PUSHUP
+                    ? ((data.variant === "standard" ? "normal" : data.variant) as MovementOptions["pushupWidth"])
+                    : undefined,
+            pushupWeight: data.liftFamily === LiftFamily.PUSHUP ? data.pushupWeight : undefined,
+            chestSize:
+                data.liftFamily === LiftFamily.BENCH || data.liftFamily === LiftFamily.PUSHUP
+                    ? (data.chestSize as MovementOptions["chestSize"])
+                    : undefined,
         };
     };
 
@@ -45,8 +54,8 @@ export function EngineRoom({ result, inputs, onLiftDataChangeA, onLiftDataChange
                         lifterA={{ name: lifterA.name, anthropometry: lifterA.anthropometry }}
                         lifterB={{ name: lifterB.name, anthropometry: lifterB.anthropometry }}
                         movement={inputs.liftDataA.liftFamily}
-                        optionsA={mapToOptions(inputs.liftDataA, inputs.liftDataA.liftFamily) as any}
-                        optionsB={mapToOptions(inputs.liftDataB, inputs.liftDataB.liftFamily) as any}
+                        optionsA={mapToOptions(inputs.liftDataA)}
+                        optionsB={mapToOptions(inputs.liftDataB)}
                         repsA={inputs.liftDataA.reps}
                         repsB={inputs.liftDataB.reps}
                         metricsA={lifterA.metrics}

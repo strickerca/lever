@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useUnits } from "@/hooks/useUnits";
 import {
-  BenchArchStyle,
-  BenchGripWidth,
   DeadliftVariant,
   LiftFamily,
   PullupGrip,
@@ -20,6 +19,8 @@ interface LiftSelectorProps {
   stance?: string;
   pushupWeight?: number;
   barStartHeightOffset?: number;
+  chestSize?: "small" | "average" | "large";
+  squatDepth?: "parallel" | "belowParallel";
   onChange: (data: {
     liftFamily: LiftFamily;
     variant: string;
@@ -28,6 +29,8 @@ interface LiftSelectorProps {
     stance?: string;
     pushupWeight?: number;
     barStartHeightOffset?: number;
+    chestSize?: "small" | "average" | "large";
+    squatDepth?: "parallel" | "belowParallel";
   }) => void;
   showLoadReps?: boolean;
   showLiftTypeNote?: boolean;
@@ -81,17 +84,33 @@ export function LiftSelector({
   stance = "normal",
   pushupWeight = 0,
   barStartHeightOffset = 0,
+  chestSize = "average",
+  squatDepth = "parallel",
   onChange,
   showLoadReps = true,
   showLiftTypeNote = false,
   showLiftType = true,
-}: LiftSelectorProps) {
-  const [loadUnit, setLoadUnit] = useState<"kg" | "lbs">("kg");
-  const [heightUnit, setHeightUnit] = useState<"cm" | "inches">("cm");
+  theme = "dark",
+}: LiftSelectorProps & { theme?: "light" | "dark" }) {
+  const { load: loadUnit, barHeight: heightUnit, setUnits } = useUnits();
   const [loadInput, setLoadInput] = useState<string>("");
   const [repsInput, setRepsInput] = useState<string>("");
   const [pushupWeightInput, setpushupWeightInput] = useState<string>("0");
   const [barHeightOffsetInput, setBarHeightOffsetInput] = useState<string>("0");
+
+  // Determine styles based on theme
+  const isDark = theme === "dark";
+  const styles = {
+    label: `block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDark ? "text-slate-400" : "text-gray-600"}`,
+    input: `w-full px-2 py-1 rounded-md text-xs font-medium transition-colors outline-none focus:ring-1 ${isDark
+      ? "bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:ring-blue-500/50 focus:border-blue-500/50"
+      : "bg-white border border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-transparent"
+      }`,
+    buttonActive: isDark ? "bg-blue-600 text-white" : "bg-blue-500 text-white",
+    buttonInactive: isDark ? "bg-slate-800 text-slate-400 hover:bg-slate-700" : "bg-white text-gray-700 hover:bg-gray-50",
+    buttonContainer: isDark ? "border-slate-700" : "border-gray-300",
+    note: isDark ? "text-slate-500" : "text-gray-500",
+  };
 
   // Update local state when props change
   useEffect(() => {
@@ -232,17 +251,18 @@ export function LiftSelector({
   const isPushup = liftFamily === LiftFamily.PUSHUP;
 
   return (
-    <div className="space-y-4">
+
+    <div className="flex flex-col gap-1.5">
       {/* Lift Family Selector */}
       {showLiftType && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className={styles.label}>
             Lift Type {showLiftTypeNote && <span className="text-gray-500 font-normal">(must be the same for both lifters)</span>}
           </label>
           <select
             value={liftFamily}
             onChange={(e) => handleLiftFamilyChange(e.target.value as LiftFamily)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+            className={styles.input}
           >
             <option value={LiftFamily.SQUAT}>Squat</option>
             <option value={LiftFamily.DEADLIFT}>Deadlift</option>
@@ -255,10 +275,10 @@ export function LiftSelector({
         </div>
       )}
 
-      {/* Variant Selector */}
+      {/* Variant Selector (Full Width) */}
       {variants.length > 1 && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className={styles.label}>
             Variant
           </label>
           <select
@@ -266,7 +286,7 @@ export function LiftSelector({
             onChange={(e) =>
               onChange({ liftFamily, variant: e.target.value, load, reps, stance, pushupWeight, barStartHeightOffset })
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+            className={styles.input}
           >
             {variants.map((v) => (
               <option key={v.value} value={v.value}>
@@ -277,82 +297,130 @@ export function LiftSelector({
         </div>
       )}
 
-      {/* Stance Selector */}
-      {needsStance && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Stance Width
-          </label>
-          <select
-            value={stance}
-            onChange={(e) =>
-              onChange({ liftFamily, variant, load, reps, stance: e.target.value, pushupWeight, barStartHeightOffset })
-            }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
-          >
-            {(isSumo ? SUMO_STANCES : SQUAT_STANCES).map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Secondary Options Grid (Stance, Depth, Chest, Elevation) */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Stance Selector */}
+        {needsStance && (
+          <div className={!needsLoad && !isPushup ? "col-span-2" : ""}>
+            {/* If we have many options, keep col-span-1. If it's the only secondary, col-span-2 */}
+            <label className={styles.label}>
+              Stance Width
+            </label>
+            <select
+              value={stance}
+              onChange={(e) =>
+                onChange({ liftFamily, variant, load, reps, stance: e.target.value, pushupWeight, barStartHeightOffset, chestSize, squatDepth })
+              }
+              className={styles.input}
+            >
+              {(isSumo ? SUMO_STANCES : SQUAT_STANCES).map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
-      {/* Bar Elevation Offset (Deadlift only) */}
-      {liftFamily === LiftFamily.DEADLIFT && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Bar Elevation (Deficit/Blocks)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              value={barHeightOffsetInput}
-              onChange={(e) => handleBarHeightOffsetChange(e.target.value)}
-              onBlur={handleBarHeightOffsetBlur}
-              onKeyDown={(e) => e.key === "Enter" && handleBarHeightOffsetBlur()}
-              onFocus={(e) => e.target.select()}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
-              step="0.5"
-            />
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setHeightUnit("cm")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  heightUnit === "cm"
-                    ? "bg-blue-500 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                cm
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeightUnit("inches")}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
-                  heightUnit === "inches"
-                    ? "bg-blue-500 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                in
-              </button>
+        {/* Squat Depth Selector */}
+        {liftFamily === LiftFamily.SQUAT && (
+          <div>
+            <label className={styles.label}>
+              Squat Depth
+            </label>
+            <select
+              value={squatDepth}
+              onChange={(e) =>
+                onChange({ liftFamily, variant, load, reps, stance, pushupWeight, barStartHeightOffset, chestSize, squatDepth: e.target.value as "parallel" | "belowParallel" })
+              }
+              className={styles.input}
+            >
+              <option value="parallel">Parallel</option>
+              <option value="belowParallel">Below Parallel (Deep)</option>
+            </select>
+          </div>
+        )}
+
+        {/* Bar Elevation Offset (Deadlift only) */}
+        {liftFamily === LiftFamily.DEADLIFT && (
+          <div className="col-span-2">
+            <label className={styles.label}>
+              Bar Elevation
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={barHeightOffsetInput}
+                onChange={(e) => handleBarHeightOffsetChange(e.target.value)}
+                onBlur={handleBarHeightOffsetBlur}
+                onKeyDown={(e) => e.key === "Enter" && handleBarHeightOffsetBlur()}
+                onFocus={(e) => e.target.select()}
+                className={`${styles.input} flex-1 min-w-[3rem]`}
+                step="0.5"
+              />
+              <div className={`flex rounded-lg border ${styles.buttonContainer} overflow-hidden`}>
+                <button
+                  type="button"
+                  onClick={() => setUnits("metric")}
+                  className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${heightUnit === "cm"
+                    ? styles.buttonActive
+                    : styles.buttonInactive
+                    }`}
+                >
+                  cm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnits("imperial")}
+                  className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${isDark ? "border-l border-slate-700" : "border-l border-gray-300"} ${heightUnit === "inches"
+                    ? styles.buttonActive
+                    : styles.buttonInactive
+                    }`}
+                >
+                  in
+                </button>
+              </div>
             </div>
           </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Negative = deficit (bar lower), Positive = blocks (bar higher)
-          </p>
-        </div>
-      )}
+        )}
 
+        {/* Chest Size Selector (Bench & Pushup) */}
+        {(liftFamily === LiftFamily.BENCH || liftFamily === LiftFamily.PUSHUP) && (
+          <div>
+            <label className={styles.label}>
+              Chest Size
+            </label>
+            <select
+              value={chestSize}
+              onChange={(e) =>
+                onChange({
+                  liftFamily,
+                  variant,
+                  load,
+                  reps,
+                  stance,
+                  pushupWeight,
+                  barStartHeightOffset,
+                  chestSize: e.target.value as "small" | "average" | "large",
+                })
+              }
+              className={styles.input}
+            >
+              <option value="small">Small</option>
+              <option value="average">Avg</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Load & Reps Grid */}
       {showLoadReps && (
-        <>
+        <div className="grid grid-cols-[3fr_1fr] gap-2">
           {/* Load Input */}
           {needsLoad && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className={styles.label}>
                 Load
               </label>
               <div className="flex gap-2">
@@ -363,32 +431,30 @@ export function LiftSelector({
                   onBlur={handleLoadBlur}
                   onKeyDown={(e) => e.key === "Enter" && handleLoadBlur()}
                   onFocus={(e) => e.target.select()}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+                  className={`${styles.input} flex-1 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                   min="0"
                   step="2.5"
                 />
-                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <div className={`flex rounded-lg border ${styles.buttonContainer} overflow-hidden shrink-0`}>
                   <button
                     type="button"
-                    onClick={() => setLoadUnit("kg")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      loadUnit === "kg"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    onClick={() => setUnits("metric")}
+                    className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${loadUnit === "kg"
+                      ? styles.buttonActive
+                      : styles.buttonInactive
+                      }`}
                   >
                     kg
                   </button>
                   <button
                     type="button"
-                    onClick={() => setLoadUnit("lbs")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
-                      loadUnit === "lbs"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    onClick={() => setUnits("imperial")}
+                    className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${isDark ? "border-l border-slate-700" : "border-l border-gray-300"} ${loadUnit === "lbs"
+                      ? styles.buttonActive
+                      : styles.buttonInactive
+                      }`}
                   >
-                    lbs
+                    lb
                   </button>
                 </div>
               </div>
@@ -398,8 +464,8 @@ export function LiftSelector({
           {/* Push-up Added Weight */}
           {isPushup && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Added Weight (Optional)
+              <label className={styles.label}>
+                Added Weight
               </label>
               <div className="flex gap-2">
                 <input
@@ -409,44 +475,39 @@ export function LiftSelector({
                   onBlur={handlePushupWeightBlur}
                   onKeyDown={(e) => e.key === "Enter" && handlePushupWeightBlur()}
                   onFocus={(e) => e.target.select()}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+                  className={`${styles.input} flex-1 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                   min="0"
                   step="2.5"
                 />
-                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <div className={`flex rounded-lg border ${styles.buttonContainer} overflow-hidden shrink-0`}>
                   <button
                     type="button"
-                    onClick={() => setLoadUnit("kg")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      loadUnit === "kg"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    onClick={() => setUnits("metric")}
+                    className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${loadUnit === "kg"
+                      ? styles.buttonActive
+                      : styles.buttonInactive
+                      }`}
                   >
                     kg
                   </button>
                   <button
                     type="button"
-                    onClick={() => setLoadUnit("lbs")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
-                      loadUnit === "lbs"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    onClick={() => setUnits("imperial")}
+                    className={`px-1.5 py-1 text-[10px] font-bold transition-colors ${isDark ? "border-l border-slate-700" : "border-l border-gray-300"} ${loadUnit === "lbs"
+                      ? styles.buttonActive
+                      : styles.buttonInactive
+                      }`}
                   >
-                    lbs
+                    lb
                   </button>
                 </div>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Weight placed over middle back for physics calculations
-              </p>
             </div>
           )}
 
           {/* Reps Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className={styles.label}>
               Reps
             </label>
             <input
@@ -456,12 +517,12 @@ export function LiftSelector({
               onBlur={handleRepsBlur}
               onKeyDown={(e) => e.key === "Enter" && handleRepsBlur()}
               onFocus={(e) => e.target.select()}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+              className={`${styles.input} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               min="1"
               step="1"
             />
           </div>
-        </>
+        </div>
       )}
     </div>
   );

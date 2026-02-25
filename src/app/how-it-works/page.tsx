@@ -55,11 +55,11 @@ export default function HowItWorksPage() {
               <p className="font-semibold mb-2">Example:</p>
               <ul className="space-y-2 list-disc list-inside">
                 <li>
-                  Lifter A (5'7"): Squats 315 lbs, bar moves 0.58m →{" "}
+                  Lifter A (5&apos;7&quot;): Squats 315 lbs, bar moves 0.58m →{" "}
                   <strong>825 Joules</strong>
                 </li>
                 <li>
-                  Lifter B (6'3"): Squats 315 lbs, bar moves 0.68m →{" "}
+                  Lifter B (6&apos;3&quot;): Squats 315 lbs, bar moves 0.68m →{" "}
                   <strong>969 Joules</strong>
                 </li>
                 <li className="text-blue-600 font-semibold">
@@ -77,7 +77,7 @@ export default function HowItWorksPage() {
           </h2>
           <div className="space-y-4 text-gray-700">
             <p className="text-lg">
-              It's not just about <em>how far</em> you move the bar—it's also
+              It&rsquo;s not just about <em>how far</em> you move the bar&mdash;it&rsquo;s also
               about <em>how hard</em> it is to move it.
             </p>
             <p>
@@ -183,7 +183,7 @@ export default function HowItWorksPage() {
                 <li>Lifter A squats 300 lbs with demand factor = 0.180</li>
                 <li>Lifter B has demand factor = 0.210 (17% higher)</li>
                 <li className="text-purple-600 font-semibold">
-                  Lifter A's 300 lbs = Lifter B's 257 lbs
+                  Lifter A&rsquo;s 300 lbs = Lifter B&rsquo;s 257 lbs
                 </li>
               </ul>
             </div>
@@ -200,14 +200,14 @@ export default function HowItWorksPage() {
             <ul className="space-y-2 list-disc list-inside ml-4">
               <li>
                 <strong>2D model:</strong> Only considers sagittal plane (side
-                view). Doesn't account for stance width or knee tracking.
+                view). Doesn&rsquo;t account for stance width or knee tracking.
               </li>
               <li>
                 <strong>Population averages:</strong> Segment ratios are based on
-                Winter's data. Individual variation exists (±1-2 SD per segment).
+                Winter&rsquo;s data. Individual variation exists (±1-2 SD per segment).
               </li>
               <li>
-                <strong>No tissue properties:</strong> Doesn't model muscle
+                <strong>No tissue properties:</strong> Doesn&rsquo;t model muscle
                 leverage, tendon stiffness, or strength curves.
               </li>
               <li>

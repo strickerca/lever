@@ -43,7 +43,8 @@ function calculateLiftMetrics(
   reps: number,
   stance?: string,
   pushupWeight?: number,
-  barStartHeightOffset?: number
+  barStartHeightOffset?: number,
+  squatDepth?: string
 ): LiftMetrics {
   switch (liftFamily) {
     case LiftFamily.SQUAT:
@@ -52,7 +53,8 @@ function calculateLiftMetrics(
         variant as SquatVariant | "highBar" | "lowBar" | "front",
         load,
         reps,
-        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal"
+        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal",
+        (squatDepth as "parallel" | "belowParallel") || "parallel"
       );
 
     case LiftFamily.DEADLIFT:
@@ -129,14 +131,16 @@ function getKinematics(
   liftFamily: LiftFamily,
   variant: string,
   stance?: string,
-  barStartHeightOffset?: number
+  barStartHeightOffset?: number,
+  squatDepth?: string
 ): KinematicSolution | undefined {
   switch (liftFamily) {
     case LiftFamily.SQUAT:
       return solveSquatKinematics(
         anthropometry,
         variant as SquatVariant | "highBar" | "lowBar" | "front",
-        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal"
+        (stance as SquatStance | "narrow" | "normal" | "wide" | "ultraWide") || "normal",
+        (squatDepth as "parallel" | "belowParallel") || "parallel"
       );
 
     case LiftFamily.DEADLIFT:
@@ -206,7 +210,9 @@ export function compareLifts(
   pushupWeightA?: number,
   pushupWeightB?: number,
   barStartHeightOffsetA?: number,
-  barStartHeightOffsetB?: number
+  barStartHeightOffsetB?: number,
+  squatDepthA?: string,
+  squatDepthB?: string
 ): ComparisonResult {
   // If performanceB not provided, use performanceA (legacy behavior for same performance)
   const perfB = performanceB ?? performanceA;
@@ -220,7 +226,8 @@ export function compareLifts(
     performanceA.reps,
     stanceA,
     pushupWeightA,
-    barStartHeightOffsetA
+    barStartHeightOffsetA,
+    squatDepthA
   );
 
   // Step 2: Compute metrics for Lifter B with THEIR OWN load and reps
@@ -232,7 +239,8 @@ export function compareLifts(
     perfB.reps,
     stanceB,
     pushupWeightB,
-    barStartHeightOffsetB
+    barStartHeightOffsetB,
+    squatDepthB
   );
 
   // Step 3: Calculate demand factors with load to get pure biomechanical demand
@@ -244,7 +252,8 @@ export function compareLifts(
     1,
     stanceA,
     pushupWeightA,
-    barStartHeightOffsetA
+    barStartHeightOffsetA,
+    squatDepthA
   );
   const metricsB_1rep = calculateLiftMetrics(
     lifterB.anthropometry,
@@ -254,7 +263,8 @@ export function compareLifts(
     1,
     stanceB,
     pushupWeightB,
-    barStartHeightOffsetB
+    barStartHeightOffsetB,
+    squatDepthB
   );
 
   // Calculate bodyweight-only demand to capture body mass differences
@@ -266,7 +276,8 @@ export function compareLifts(
     1,
     stanceA,
     0, // No pushup weight for baseline
-    barStartHeightOffsetA
+    barStartHeightOffsetA,
+    squatDepthA
   );
   const metricsB_bw = calculateLiftMetrics(
     lifterB.anthropometry,
@@ -276,7 +287,8 @@ export function compareLifts(
     1,
     stanceB,
     0, // No pushup weight for baseline
-    barStartHeightOffsetB
+    barStartHeightOffsetB,
+    squatDepthB
   );
 
   // Geometric demand factor (shape/leverage)
@@ -311,10 +323,10 @@ export function compareLifts(
   let advantageDirection: "advantage_A" | "advantage_B" | "neutral";
   if (Math.abs(advantagePercentage) < 1) {
     advantageDirection = "neutral";
-  } else if (demandRatio < 1) {
-    advantageDirection = "advantage_B"; // B has lower demand = advantage
+  } else if (demandRatio > 1) {
+    advantageDirection = "advantage_A"; // B has higher demand (harder) -> A has advantage
   } else {
-    advantageDirection = "advantage_A"; // A has lower demand = advantage
+    advantageDirection = "advantage_B"; // B has lower demand (easier) -> B has advantage
   }
 
   // Generate explanations
@@ -358,10 +370,10 @@ export function compareLifts(
     let adjustedAdvantageDirection: "advantage_A" | "advantage_B" | "neutral";
     if (Math.abs(adjustedAdvantagePercentage) < 1) {
       adjustedAdvantageDirection = "neutral";
-    } else if (adjustedDemandRatio < 1) {
-      adjustedAdvantageDirection = "advantage_B";
-    } else {
+    } else if (adjustedDemandRatio > 1) {
       adjustedAdvantageDirection = "advantage_A";
+    } else {
+      adjustedAdvantageDirection = "advantage_B";
     }
 
     // Generate explanation
@@ -388,11 +400,48 @@ export function compareLifts(
 
   // Get kinematics only for squats (for animation)
   const kinematicsA = liftFamily === LiftFamily.SQUAT
-    ? getKinematics(lifterA.anthropometry, liftFamily, variantA, stanceA)
+    ? getKinematics(lifterA.anthropometry, liftFamily, variantA, stanceA, undefined, squatDepthA)
     : undefined;
   const kinematicsB = liftFamily === LiftFamily.SQUAT
-    ? getKinematics(lifterB.anthropometry, liftFamily, variantB, stanceB)
+    ? getKinematics(lifterB.anthropometry, liftFamily, variantB, stanceB, undefined, squatDepthB)
     : undefined;
+
+  // Equalizer Logic: Normalize load based on Work Per Rep
+  const workA = metricsA.workPerRep;
+  const workB = metricsB.workPerRep;
+
+  let equalizerMultiplier = 1.0;
+  let lifterANormalizedLoad = performanceA.load;
+  let lifterBNormalizedLoad = perfB.load;
+  let winner: 'lifterA' | 'lifterB';
+
+  if (workA > workB) {
+    equalizerMultiplier = workA / workB;
+    lifterANormalizedLoad = performanceA.load * equalizerMultiplier;
+    // Lifter B stays same
+    lifterBNormalizedLoad = perfB.load;
+    winner = 'lifterA'; // A did more work per unit load usually, but we check normalized outcome?
+    // User said: "Winner ... Based on who has the higher Normalized Load"
+    // If A gets boosted, A likely wins unless B was lifting WAY more.
+  } else {
+    equalizerMultiplier = workB / workA;
+    // Lifter A stays same
+    lifterANormalizedLoad = performanceA.load;
+    lifterBNormalizedLoad = perfB.load * equalizerMultiplier;
+    winner = 'lifterB';
+  }
+
+  // Determine winner based on finalized normalized loads
+  if (lifterANormalizedLoad > lifterBNormalizedLoad) {
+    winner = 'lifterA';
+  } else if (lifterBNormalizedLoad > lifterANormalizedLoad) {
+    winner = 'lifterB';
+  } else {
+    // Tie breaker? Just default to A or logic above?
+    // If exact tie, logic above might have set it based on work ratio direction.
+    // If weights were identical and work identical, normalized are identical.
+    winner = 'lifterA';
+  }
 
   return {
     lifterA: {
@@ -418,6 +467,12 @@ export function compareLifts(
     },
     capacityAdjusted,
     explanations,
+    equalizer: {
+      lifterANormalizedLoad,
+      lifterBNormalizedLoad,
+      multiplier: equalizerMultiplier,
+      winner,
+    },
   };
 }
 
@@ -447,8 +502,6 @@ function generateExplanations(
   // Displacement comparison
   const displacementDiff = Math.abs(comparison.displacementRatio - 1) * 100;
   if (displacementDiff > 2) {
-    const longerName =
-      comparison.displacementRatio > 1 ? anthroB.sex : anthroA.sex;
     const longerLifter = comparison.displacementRatio > 1 ? "B" : "A";
     const shorterLifter = comparison.displacementRatio > 1 ? "A" : "B";
     const impact =
@@ -524,11 +577,11 @@ function generateExplanations(
   // Overall summary
   if (Math.abs(comparison.advantagePercentage) > 1) {
     const advantagedLifter =
-      comparison.demandRatio < 1 ? "B" : "A";
+      comparison.demandRatio > 1 ? "A" : "B";
     const disadvantagedLifter =
-      comparison.demandRatio < 1 ? "A" : "B";
+      comparison.demandRatio > 1 ? "B" : "A";
     const impact =
-      comparison.demandRatio < 1 ? "advantage_B" : "advantage_A";
+      comparison.demandRatio > 1 ? "advantage_A" : "advantage_B";
 
     const advantageLevel = Math.abs(comparison.advantagePercentage);
     let interpretation = "";
@@ -543,13 +596,13 @@ function generateExplanations(
     explanations.push({
       type: "summary",
       impact,
-      message: `Bottom line: Lifter ${advantagedLifter} has ${Math.abs(comparison.advantagePercentage).toFixed(1)}% mechanical advantage due to better biomechanical positioning. ${interpretation} When comparing performances, Lifter ${disadvantagedLifter} should consider using the equivalent load calculations above for a fair comparison.`,
+      message: `Bottom line: Lifter ${advantagedLifter} has a ${Math.abs(comparison.advantagePercentage).toFixed(1)}% better Leverage Score due to more favorable biomechanics. ${interpretation} When comparing performances, Lifter ${disadvantagedLifter} should consider using the equivalent load calculations above for a fair comparison.`,
     });
   } else {
     explanations.push({
       type: "summary",
       impact: "neutral",
-      message: "Both lifters have nearly identical mechanical demands. Any performance differences are likely due to strength levels, training, and technique rather than biomechanics. This makes for a very fair direct comparison.",
+      message: "Both lifters have nearly identical Leverage Scores. Any performance differences are likely due to strength levels, training, and technique rather than biomechanics. This makes for a very fair direct comparison.",
     });
   }
 

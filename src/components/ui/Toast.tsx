@@ -75,14 +75,17 @@ export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
+    type ShowToastEvent = CustomEvent<Omit<ToastMessage, "id">>;
+
     // Listen for custom toast events
-    const handleToast = (event: CustomEvent<Omit<ToastMessage, "id">>) => {
+    const handleToast = (event: Event) => {
+      const customEvent = event as ShowToastEvent;
       const id = Date.now().toString();
-      setToasts((prev) => [...prev, { ...event.detail, id }]);
+      setToasts((prev) => [...prev, { ...customEvent.detail, id }]);
     };
 
-    window.addEventListener("show-toast" as any, handleToast);
-    return () => window.removeEventListener("show-toast" as any, handleToast);
+    window.addEventListener("show-toast", handleToast);
+    return () => window.removeEventListener("show-toast", handleToast);
   }, []);
 
   const handleClose = (id: string) => {

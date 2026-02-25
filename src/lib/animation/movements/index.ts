@@ -13,6 +13,7 @@ import { OHPPoseSolver } from "./OHPPoseSolver";
 import { PullupPoseSolver } from "./PullupPoseSolver";
 import { PushupPoseSolver } from "./PushupPoseSolver";
 import { ThrusterPoseSolver } from "./ThrusterPoseSolver";
+import { getThrusterROMParts } from "./ThrusterPoseSolver";
 
 /**
  * Factory function to create the appropriate pose solver for a movement
@@ -58,3 +59,5 @@ export {
   PushupPoseSolver,
   ThrusterPoseSolver,
 };
+
+export { getThrusterROMParts };

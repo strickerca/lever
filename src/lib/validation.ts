@@ -69,6 +69,10 @@ export function validateLifterInputs(
   const weightError = validateWeight(weight);
   if (weightError) errors.push(weightError);
 
+  if (sex !== Sex.MALE && sex !== Sex.FEMALE) {
+    errors.push({ field: "sex", message: "Sex must be male or female" });
+  }
+
   return {
     valid: errors.length === 0,
     errors,

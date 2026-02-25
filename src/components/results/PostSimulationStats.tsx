@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { ComparisonResult, LiftData } from "@/types";
-import { Scale, Flame, Activity, Ruler, Dumbbell, RefreshCw, Zap, Info, ChevronDown, ChevronUp, HelpCircle } from "lucide-react";
+import { Scale, Flame, Activity, Ruler, Dumbbell, RefreshCw, Zap, HelpCircle } from "lucide-react";
 // Custom tooltip implemented below to avoid dependencies
 // Actually, checking installed packages is hard. I'll build a custom simple tooltip to be safe and avoid dependency errors.
 

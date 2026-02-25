@@ -1,8 +1,5 @@
-import { useState } from "react";
-import { Flame, Gauge, Timer, Ruler, Settings2, X, ChevronDown, ChevronUp } from "lucide-react";
-import { LiftMetrics, LiftData } from "@/types";
+import { Flame, Gauge } from "lucide-react";
 import { VelocityGauge } from "./VelocityGauge";
-import { LiftSelector } from "../comparison/LiftSelector";
 
 interface LifterPanelProps {
     name: string;
@@ -15,10 +12,6 @@ interface LifterPanelProps {
     onVelocityInputChange: (val: string) => void;
     onVelocityBlur?: () => void;
 
-    // Lift Data
-    liftData?: LiftData;
-    onLiftDataChange?: (data: LiftData) => void;
-
     // Settings
     unit: "metric" | "imperial";
     isSyncEnabled: boolean;
@@ -26,8 +19,6 @@ interface LifterPanelProps {
     // Display Data (Calculated by Parent)
     displayPower: number;
     displayCalories: number;
-    displayTime: number;
-    displayDistance: number;
 }
 
 const COLORS = {
@@ -59,14 +50,10 @@ export function LifterPanel({
     velocityInputValue,
     onVelocityInputChange,
     onVelocityBlur,
-    liftData,
-    onLiftDataChange,
     unit,
     isSyncEnabled,
     displayPower,
     displayCalories,
-    displayTime,
-    displayDistance,
 }: LifterPanelProps) {
     const styles = COLORS[lifterKey];
 

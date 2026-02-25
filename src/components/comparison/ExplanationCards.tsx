@@ -14,31 +14,31 @@ export function ExplanationCards({ explanations }: ExplanationCardsProps) {
     switch (impact) {
       case "advantage_A":
         return {
-          border: "border-blue-200",
-          bg: "bg-blue-50",
-          icon: "text-blue-600",
-          text: "text-blue-900",
+          border: "border-blue-500/30",
+          bg: "bg-blue-900/20",
+          icon: "text-blue-400",
+          text: "text-blue-200",
         };
       case "advantage_B":
         return {
-          border: "border-orange-200",
-          bg: "bg-orange-50",
-          icon: "text-orange-600",
-          text: "text-orange-900",
+          border: "border-orange-500/30",
+          bg: "bg-orange-900/20",
+          icon: "text-orange-400",
+          text: "text-orange-200",
         };
       case "neutral":
         return {
-          border: "border-gray-200",
-          bg: "bg-gray-50",
-          icon: "text-gray-600",
-          text: "text-gray-900",
+          border: "border-slate-700",
+          bg: "bg-slate-800/50",
+          icon: "text-slate-500",
+          text: "text-slate-300",
         };
     }
   };
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <h3 className="text-lg font-semibold text-slate-200 mb-4">
         Biomechanical Analysis
       </h3>
 
@@ -61,7 +61,7 @@ export function ExplanationCards({ explanations }: ExplanationCardsProps) {
       })}
 
       {explanations.length === 0 && (
-        <div className="text-center text-gray-500 text-sm py-8">
+        <div className="text-center text-slate-500 text-sm py-8">
           No significant differences detected
         </div>
       )}

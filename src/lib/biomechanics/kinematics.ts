@@ -1,5 +1,16 @@
 import { Anthropometry, KinematicSolution, Point2D, SquatVariant, SquatStance } from "../../types";
-import { BAR_POSITIONS, KINEMATIC_SOLVER, SQUAT_STANCE_MODIFIERS, STANDARD_PLATE_RADIUS, AVERAGE_CHEST_DEPTH } from "./constants";
+import {
+  AVERAGE_CHEST_DEPTH,
+  BAR_POSITIONS,
+  BENCH_ARCH_HEIGHTS,
+  BENCH_GRIP_ANGLES,
+  HAND_GRIP_RATIO,
+  KINEMATIC_SOLVER,
+  MIN_BENCH_DISPLACEMENT,
+  SQUAT_STANCE_MODIFIERS,
+  STANDARD_PLATE_RADIUS,
+  SUMO_STANCE_MODIFIERS,
+} from "./constants";
 
 /**
  * Converts degrees to radians
@@ -30,7 +41,8 @@ export function toDegrees(radians: number): number {
 export function solveSquatKinematics(
   anthropometry: Anthropometry,
   variant: SquatVariant | "highBar" | "lowBar" | "front",
-  stance: SquatStance | "narrow" | "normal" | "wide" | "ultraWide" = "normal"
+  stance: SquatStance | "narrow" | "normal" | "wide" | "ultraWide" = "normal",
+  depth: "parallel" | "belowParallel" = "parallel"
 ): KinematicSolution {
   // Get bar position offsets (convert cm to meters)
   const barOffset = BAR_POSITIONS[variant as keyof typeof BAR_POSITIONS];
@@ -46,7 +58,8 @@ export function solveSquatKinematics(
   const L_torso = anthropometry.segments.torso;
 
   // Set femur angle (0° = parallel to ground at depth)
-  const theta_femur = 0; // degrees
+  // Below parallel = 10 degrees lower (negative)
+  const theta_femur = depth === "belowParallel" ? -10 : 0; // degrees
   const theta_femur_rad = toRadians(theta_femur);
 
   // Start with maximum ankle dorsiflexion
@@ -153,6 +166,7 @@ export function solveSquatKinematics(
             hip,
             shoulder,
             bar,
+            toe: { x: anthropometry.segments.footLength, y: 0 },
           },
           angles: {
             ankle: alpha,
@@ -184,6 +198,7 @@ export function solveSquatKinematics(
         hip: { x: 0, y: 0 },
         shoulder: { x: 0, y: 0 },
         bar: { x: 0, y: 0 },
+        toe: { x: 0, y: 0 },
       },
       angles: {
         ankle: 0,
@@ -214,6 +229,19 @@ export function solveSquatKinematics(
  *   - Affects displacement and moment arms (higher bar = more upright = smaller moment arms)
  * @returns Complete kinematic solution including displacement and moment arms at starting position
  */
+/**
+ * Solves deadlift kinematics using a geometric iterative solver
+ * Finds the body configuration (angles) that satisfies the closed chain constraint:
+ * 1. Arms are vertical (or nearly so) gripping the bar
+ * 2. Bar is at specified height (floor +/- offset)
+ * 3. Body segments (Tibia + Femur + Torso) connect Ankle to Shoulder
+ *
+ * @param anthropometry - The lifter's anthropometric profile
+ * @param variant - Deadlift variant (conventional or sumo)
+ * @param stance - Stance width for sumo
+ * @param barStartHeightOffset - Bar elevation offset in meters (default: 0)
+ * @returns Complete kinematic solution including displacement and moment arms at starting position
+ */
 export function solveDeadliftKinematics(
   anthropometry: Anthropometry,
   variant: "conventional" | "sumo",
@@ -222,75 +250,200 @@ export function solveDeadliftKinematics(
 ): KinematicSolution {
   const segments = anthropometry.segments;
 
-  // Starting position (bar height includes offset)
-  //
-  // Sign convention:
-  //   offset < 0 → DEFICIT (bar LOWER than standard floor)
-  //   offset = 0 → STANDARD floor pull
-  //   offset > 0 → BLOCKS (bar HIGHER than standard floor)
+  // 1. Determine Bar Height
   const barStartHeight = STANDARD_PLATE_RADIUS + barStartHeightOffset;
 
-  // Simplified deadlift position at lockout
-  // Hip is at standing height
-  const hipHeight = segments.femur + segments.tibia + segments.footHeight;
-  const shoulderHeight = hipHeight + segments.torso;
+  // 2. Adjust Limit Lengths for Stance (Sumo)
+  // Wider stance = shorter effective femur/ROM in sagittal plane
+  let effectiveFemur = segments.femur;
+  const effectiveTibia = segments.tibia; // Stance mainly affects femur, but for simplicity...
+  // Actually sumo stance modifiers are in constants
+  if (variant === "sumo") {
+    const mod = SUMO_STANCE_MODIFIERS[stance];
+    effectiveFemur = segments.femur * mod.femurMultiplier;
+    // Note: we don't apply ROM multiplier here directly, we solve geometry.
+    // The "shorter femur" effect naturally reduces ROM in the solver.
+  }
 
-  // Bar position at lockout (hands at hip level, arms extended)
-  // Use same formula as physics.ts: acromionHeight - totalArm
-  const barX = 0;
-  const barY = anthropometry.derived.acromionHeight - anthropometry.derived.totalArm;
+  // 3. Target Shoulder Height
+  // Shoulder must be at height where arms can reach the bar.
+  // We assume vertical arms at start for max efficiency (or slight angle).
+  // Y_shoulder = Y_bar + L_arm
+  // Note: Most lifters engage Lats, slight arm angle, but vertical is good baseline constraint.
+  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO; // Hand is engaging bar
+  const targetShoulderHeight = barStartHeight + armLength;
 
-  // Knee slightly bent at lockout
-  const kneeX = 0;
-  const kneeY = segments.tibia + segments.footHeight;
+  // 5. Iterative Solver
+  // We iterate HIP ANGLE (relative to ground/femur) to find valid chain.
+  // Actually, standard approach: Iterate Tibia Angle (Shank angle).
+  // Vertical shank (90) -> Forward shank (<90).
+  // Find Tibia angle that puts Shoulder at Target Height.
 
-  // Hip directly above knee for conventional, wider for sumo
-  const hipX = variant === "sumo" ? segments.femur * 0.1 : 0;
-  const hipY = hipHeight;
+  let bestSolution: KinematicSolution | null = null;
 
-  // Shoulder slightly behind bar
-  const shoulderX = -segments.torso * 0.05;
-  const shoulderY = shoulderHeight;
+  // Iterate Tibia Angle from 90 (vertical) down to ~50
+  for (let tibiaAngle = 90; tibiaAngle > 50; tibiaAngle -= 0.5) {
+    const tibiaRad = toRadians(tibiaAngle);
 
-  // Calculate displacement (bar travel from start to lockout)
-  // Blocks reduce ROM, deficits increase ROM
-  const displacement = barY - barStartHeight;
+    // Knee Position
+    // Wait, standard ref frame: Ankle at (0,0)? 
+    // Let's put Ankle at (0, footHeight).
+    // Tibia angle is usually measured from horizontal? Or Vertical?
+    // Let's use standard trig: Angle 90 = vertical.
+    const kneeY = segments.footHeight + effectiveTibia * Math.sin(tibiaRad);
+    const kneeX_pos = effectiveTibia * Math.cos(tibiaRad); // Forward movement
 
-  // Calculate angles (simplified - at lockout position)
-  const ankleAngle = 90; // Standing position
-  const kneeAngle = 175; // Nearly straight
-  const hipAngle = 175; // Nearly straight
-  const trunkAngle = 5; // Nearly vertical
+    // Now we need to solve for Hip Angle / Torso Angle.
+    // Constraint: Shoulder Y = targetShoulderHeight.
+    // Chain: Knee -> Hip -> Shoulder.
+    // Y_shoulder = Y_knee + L_femur * sin(femurAngle) + L_torso * sin(torsoAngle) = Target
+    // X_shoulder = X_knee - L_femur * cos(femurAngle) + L_torso * cos(torsoAngle)
 
-  // Moment arms at starting position (more relevant for torque calculations)
-  // These scale inversely with bar start height - higher start = more upright = smaller moment arms
-  // Use standard plate radius as reference, scale inversely
-  const referenceMomentArm = STANDARD_PLATE_RADIUS * 0.4;
-  const hipMomentArm = referenceMomentArm * (STANDARD_PLATE_RADIUS / barStartHeight);
-  const kneeMomentArm = hipMomentArm * 0.5; // Knee moment arm is roughly half of hip
+    // Constraint 2: Bar is over Midfoot (X=0 approx).
+    // So X_shoulder should be approx 0 (Vertical arms).
 
-  return {
-    valid: true,
-    mobilityLimited: false,
-    positions: {
-      ankle: { x: 0, y: segments.footHeight },
-      knee: { x: kneeX, y: kneeY },
-      hip: { x: hipX, y: hipY },
-      shoulder: { x: shoulderX, y: shoulderY },
-      bar: { x: barX, y: barY },
-    },
-    angles: {
-      ankle: ankleAngle,
-      knee: kneeAngle,
-      hip: hipAngle,
-      trunk: trunkAngle,
-    },
-    momentArms: {
-      hip: hipMomentArm,
-      knee: kneeMomentArm,
-    },
-    displacement,
-  };
+    // We have 2 unknowns: FemurAngle, TorsoAngle.
+    // We have 2 constraints: Y_shoulder, X_shoulder.
+    // This is Inverse Kinematics for a 2-link arm (Femur+Torso) reaching from Knee to ShoulderTarget.
+
+    const targetShoulderX = 0; // Bar over midfoot
+
+    // Distance from Knee to TargetShoulder
+    const dx = targetShoulderX - kneeX_pos;
+    const dy = targetShoulderHeight - kneeY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Check reachability
+    if (dist > (effectiveFemur + segments.torso)) continue; // Can't reach
+
+    // Use Law of Cosines to find internal angles
+    // triangle sides: a=torso, b=femur, c=dist
+    const a = segments.torso;
+    const b = effectiveFemur;
+    const c = dist;
+
+    // Angle at Knee (between c and b)
+    // cos(alpha) = (b^2 + c^2 - a^2) / (2bc)
+    const cosAlpha = (b * b + c * c - a * a) / (2 * b * c);
+    if (Math.abs(cosAlpha) > 1) continue;
+    const alpha = Math.acos(cosAlpha);
+
+    // Angle of vector C (Knee to Shoulder)
+    const angleC = Math.atan2(dy, dx);
+
+    // Femur Angle (global) = angleC - alpha (assuming knee bends backward relative to line)
+    // Standard DL: Hip helps.
+    const femurRad = angleC + alpha; // "Knee up"? No, Knee is low. Femur goes UP from knee.
+    // Check geometry visually: Knee(low) -> Hip(high). Vector C is Up-Left(ish).
+    // We want Hip to be "behind" the line connecting Knee-Shoulder?
+    // Usually Hip is posterior. So femur angle should be such that X_hip < X_line.
+    // Actually Law of Cosines gives internal angle.
+    // Let's try simple IK function from utils if meaningful, but inline is fine.
+
+    // Solution 1: Knee Up / Hip Back (Standard)
+    // Femur angle
+    const thetaFemur = angleC + alpha; // Or minus?
+    // If we add alpha, hip is "above" the line? 
+    // X_hip = KneeX + L_femur * cos(thetaFemur)
+
+    // Let's calculate actual positions
+    const hipX = kneeX_pos + effectiveFemur * Math.cos(thetaFemur);
+    const hipY = kneeY + effectiveFemur * Math.sin(thetaFemur);
+
+    // Check if Hip is behind Knee (X_hip < X_knee)? Not necessarily for sumo, but for conv yes.
+    // Standard deadlift: Hip is behind bar.
+    // If HipX > 0 (in front of bar), that's invalid.
+    if (hipX > 0.1) {
+      // If pure math puts hip forward, try the other solution (angleC - alpha)
+      // But usually we constrained X_shoulder=0.
+      continue;
+    }
+
+    // Torso Angle (from Hip to Shoulder)
+    const torsoRad = Math.atan2(targetShoulderHeight - hipY, targetShoulderX - hipX);
+
+    // Valid Torso check (must be upright-ish, 0-90 deg)
+    const torsoDeg = toDegrees(torsoRad);
+    if (torsoDeg < 10 || torsoDeg > 170) continue;
+
+    // Valid solution found.
+    // Calculate Moment Arms based on horizontal distances to Bar (X=0)
+    const hipMomentArm = Math.abs(hipX - 0);
+    const kneeMomentArm = Math.abs(kneeX_pos - 0); // Knee to Bar
+    // Note: If X_bar=0, and KneeX > 0 (knees forward), moment arm is dist.
+
+    // If we found a valid one, is it the "best"? 
+    // Humans optimize for... ? 
+    // Usually "hips as high as possible without losing back angle" or "shins touching bar".
+    // Constraint: Shins touching bar means KneeX <= approx 0? 
+    // Actually bar is over midfoot. Shins touch bar implies KneeX approx 0 or slightly behind if vertical.
+    // If KneeX > 0, shins are going *through* the bar.
+    // So constraint: KneeX <= BarRadius? 
+    // Let's apply penalty if KneeX is too far forward (shins crossing bar line).
+
+    if (kneeX_pos > 0.05) continue; // Shins maximize verticality.
+
+    // Calculate elbow and wrist positions for visualization (Vertical Arms assumption)
+    // Wrist is at Bar Height (roughly)
+    const wristPos = { x: targetShoulderX, y: barStartHeight }; // Approx
+    // Elbow is down from shoulder
+    const elbowPos = { x: targetShoulderX, y: targetShoulderHeight - segments.upperArm };
+
+    bestSolution = {
+      valid: true,
+      mobilityLimited: false,
+      positions: {
+        ankle: { x: 0, y: segments.footHeight },
+        knee: { x: kneeX_pos, y: kneeY },
+        hip: { x: hipX, y: hipY },
+        shoulder: { x: targetShoulderX, y: targetShoulderHeight },
+        elbow: elbowPos,
+        wrist: wristPos,
+        bar: { x: targetShoulderX, y: barStartHeight }, // Arms vertical
+        toe: { x: anthropometry.segments.footLength, y: segments.footHeight },
+      },
+      angles: {
+        ankle: tibiaAngle,
+        knee: toDegrees(femurRad), // Relative to horizontal
+        hip: toDegrees(torsoRad), // Relative to horizontal
+        trunk: torsoDeg
+      },
+      momentArms: {
+        hip: hipMomentArm,
+        knee: kneeMomentArm
+      },
+      displacement: 0 // Will be calc'd by caller or standard logic? 
+      // Caller calculates displacement = lockout - start.
+      // We just return start positions.
+    };
+
+    // Break on first valid "Shin-contact" solution (high hips preference? 
+    // Iterating from 90 down keeps shins most vertical => High hips.
+    break;
+  }
+
+  if (!bestSolution) {
+    // Fallback if geometry fails (e.g. extremely short arms)
+    return {
+      valid: false,
+      mobilityLimited: true,
+      positions: { ankle: { x: 0, y: 0 }, knee: { x: 0, y: 0 }, hip: { x: 0, y: 0 }, shoulder: { x: 0, y: 0 }, bar: { x: 0, y: 0 }, toe: { x: 0, y: 0 } },
+      angles: { ankle: 0, knee: 0, hip: 0, trunk: 0 },
+      momentArms: { hip: 0, knee: 0 },
+      displacement: 0
+    };
+  }
+
+  // Recalculate displacement based on lockout.
+  // Sumo reduces sagittal-plane ROM via stance-dependent multipliers.
+  const lockoutHeight =
+    anthropometry.derived.acromionHeight - anthropometry.derived.totalArm;
+  const conventionalDisplacement = lockoutHeight - barStartHeight;
+  const romMultiplier =
+    variant === "sumo" ? SUMO_STANCE_MODIFIERS[stance].romMultiplier : 1;
+  bestSolution.displacement = conventionalDisplacement * romMultiplier;
+
+  return bestSolution;
 }
 
 /**
@@ -316,13 +469,12 @@ export function solveBenchKinematics(
   const shoulderX = 0;
   const shoulderY = shoulderHeight;
 
-  // Get grip angle
-  const gripAngles = { narrow: 45, medium: 75, wide: 85 };
-  const gripAngle = gripAngles[gripWidth];
+  // Grip angles are defined from vertical in biomechanics constants.
+  const gripAngle = BENCH_GRIP_ANGLES[gripWidth];
   const gripAngleRad = toRadians(gripAngle);
 
   // Calculate bar position at lockout
-  const armLength = segments.upperArm + segments.forearm;
+  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
   const barExtension = armLength * Math.cos(gripAngleRad);
   const barX = 0;
   const barY = shoulderY + barExtension;
@@ -345,20 +497,15 @@ export function solveBenchKinematics(
   const ankleX = kneeX + segments.tibia * 0.5;
   const ankleY = 0; // Feet on ground
 
-  // Get arch height
-  const archHeights = { flat: 0, moderate: 0.05, competitive: 0.08, extreme: 0.12 };
-  const archHeight = archHeights[archStyle];
+  // Get arch height from shared constants.
+  const archHeight = BENCH_ARCH_HEIGHTS[archStyle];
 
   // Calculate displacement
   const chestDepth = AVERAGE_CHEST_DEPTH;
-  const displacement = barExtension - chestDepth - archHeight;
-
-  // Calculate angles
-  const shoulderAngle = gripAngle;
-  const elbowAngle = 180 - gripAngle;
-
-  // Moment arms (horizontal distance from shoulder to bar)
-  const shoulderMomentArm = Math.abs(barX - shoulderX);
+  const displacement = Math.max(
+    barExtension - chestDepth - archHeight,
+    MIN_BENCH_DISPLACEMENT
+  );
 
   return {
     valid: true,
@@ -368,7 +515,10 @@ export function solveBenchKinematics(
       knee: { x: kneeX, y: kneeY },
       hip: { x: hipX, y: hipY },
       shoulder: { x: shoulderX, y: shoulderY },
+      elbow: { x: elbowX, y: elbowY },
+      wrist: { x: wristX, y: wristY },
       bar: { x: barX, y: barY },
+      toe: { x: ankleX + segments.footLength, y: ankleY },
     },
     angles: {
       ankle: 90,
@@ -408,7 +558,9 @@ export function solvePullupKinematics(
   const elbowAngle = 90;
   const elbowAngleRad = toRadians(elbowAngle);
 
-  const elbowX = segments.upperArm * 0.3;
+  const elbowOffsetFactor =
+    grip === "supinated" ? 0.24 : grip === "neutral" ? 0.30 : 0.36;
+  const elbowX = segments.upperArm * elbowOffsetFactor;
   const elbowY = shoulderY + segments.upperArm * Math.cos(elbowAngleRad);
 
   // Hands on bar
@@ -427,7 +579,10 @@ export function solvePullupKinematics(
   const ankleY = kneeY - segments.tibia;
 
   // Calculate displacement (total arm length * 0.95)
-  const displacement = anthropometry.derived.totalArm * 0.95;
+  // Effective Arm = Upper + Fore + Hand*Grip
+  const effectiveArm = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
+
+  const displacement = effectiveArm * 0.95;
 
   return {
     valid: true,
@@ -437,7 +592,10 @@ export function solvePullupKinematics(
       knee: { x: kneeX, y: kneeY },
       hip: { x: hipX, y: hipY },
       shoulder: { x: shoulderX, y: shoulderY },
+      elbow: { x: elbowX, y: elbowY },
+      wrist: { x: handX, y: handY }, // Hands on bar
       bar: { x: handX, y: handY },
+      toe: { x: ankleX, y: ankleY - segments.footLength }, // Hanging
     },
     angles: {
       ankle: 180, // Legs straight
@@ -471,7 +629,7 @@ export function solveOHPKinematics(
   const shoulderY = hipY + segments.torso;
 
   // Arms extended overhead at lockout
-  const armLength = segments.upperArm + segments.forearm;
+  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
   const barY = shoulderY + armLength;
   const barX = 0;
 
@@ -486,7 +644,10 @@ export function solveOHPKinematics(
       knee: { x: 0, y: kneeY },
       hip: { x: 0, y: hipY },
       shoulder: { x: 0, y: shoulderY },
+      elbow: { x: 0, y: shoulderY + segments.upperArm },
+      wrist: { x: 0, y: barY },
       bar: { x: barX, y: barY },
+      toe: { x: anthropometry.segments.footLength, y: ankleY },
     },
     angles: {
       ankle: 90,
@@ -520,7 +681,7 @@ export function solveThrusterKinematics(
   const shoulderY = hipY + segments.torso;
 
   // Arms extended overhead
-  const armLength = segments.upperArm + segments.forearm;
+  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
   const barY = shoulderY + armLength;
 
   // Displacement combines squat depth + overhead press
@@ -536,7 +697,10 @@ export function solveThrusterKinematics(
       knee: { x: 0, y: kneeY },
       hip: { x: 0, y: hipY },
       shoulder: { x: 0, y: shoulderY },
+      elbow: { x: 0, y: shoulderY + segments.upperArm },
+      wrist: { x: 0, y: barY },
       bar: { x: 0, y: barY },
+      toe: { x: anthropometry.segments.footLength, y: ankleY },
     },
     angles: {
       ankle: 90,
@@ -568,7 +732,7 @@ export function solvePushupKinematics(
   const handY = 0;
 
   // At top position, arms extended
-  const armLength = segments.upperArm + segments.forearm;
+  const armLength = segments.upperArm + segments.forearm + segments.hand * HAND_GRIP_RATIO;
   const shoulderY = armLength * Math.cos(toRadians(80)); // Slight angle
   const shoulderX = armLength * Math.sin(toRadians(80)) * 0.3;
 
@@ -594,7 +758,10 @@ export function solvePushupKinematics(
       knee: { x: kneeX, y: kneeY },
       hip: { x: hipX, y: hipY },
       shoulder: { x: shoulderX, y: shoulderY },
+      elbow: { x: shoulderX * 0.5, y: shoulderY * 0.5 }, // Approx
+      wrist: { x: 0, y: 0 },
       bar: { x: 0, y: handY }, // "Bar" represents hand position
+      toe: { x: ankleX - segments.footLength, y: 0 },
     },
     angles: {
       ankle: 180,

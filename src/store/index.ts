@@ -1,26 +1,26 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { Anthropometry, ComparisonResult, Sex } from "@/types";
-
-export interface UserProfile {
-  id: string;
-  name: string;
-  anthropometry: Anthropometry;
-  createdAt: number;
-}
+import { ComparisonResult, ComparisonSnapshot, SavedProfile } from "@/types";
 
 export type UnitPreference = "metric" | "imperial";
 
 interface LeverStore {
   // State
-  currentProfile: UserProfile | null;
+  savedProfiles: SavedProfile[];
   comparisonHistory: ComparisonResult[];
   unitPreference: UnitPreference;
 
-  // Actions
-  setProfile: (profile: UserProfile | null) => void;
-  addComparison: (result: ComparisonResult) => void;
+  // Profile actions
+  saveProfile: (profile: Omit<SavedProfile, "id" | "createdAt" | "updatedAt">) => string;
+  updateProfile: (id: string, updates: Partial<Omit<SavedProfile, "id" | "createdAt">>) => void;
+  deleteProfile: (id: string) => void;
+
+  // History actions
+  addComparison: (result: ComparisonResult, snapshot?: ComparisonSnapshot) => void;
+  deleteHistoryEntry: (id: string) => void;
   clearHistory: () => void;
+
+  // Unit actions
   setUnits: (preference: UnitPreference) => void;
 }
 
@@ -28,44 +28,68 @@ export const useLeverStore = create<LeverStore>()(
   persist(
     (set) => ({
       // Initial state
-      currentProfile: null,
+      savedProfiles: [],
       comparisonHistory: [],
       unitPreference: "metric",
 
-      // Actions
-      setProfile: (profile) => {
-        console.log("[Analytics] profile_created", {
-          height: profile?.anthropometry.segments.height,
-          sex: profile?.anthropometry.sex,
-        });
-        set({ currentProfile: profile });
+      // Profile actions
+      saveProfile: (profileData) => {
+        const id = crypto.randomUUID();
+        const now = Date.now();
+        const profile: SavedProfile = { ...profileData, id, createdAt: now, updatedAt: now };
+        set((state) => ({
+          savedProfiles: [...state.savedProfiles, profile],
+        }));
+        return id;
       },
 
-      addComparison: (result) => {
-        console.log("[Analytics] comparison_completed", {
-          liftFamily: result.lifterA.metrics.demandFactor > 0 ? "success" : "failure",
-          advantagePercentage: result.comparison.advantagePercentage,
-        });
+      updateProfile: (id, updates) => {
         set((state) => ({
-          comparisonHistory: [result, ...state.comparisonHistory].slice(0, 10), // Keep last 10
+          savedProfiles: state.savedProfiles.map((p) =>
+            p.id === id ? { ...p, ...updates, updatedAt: Date.now() } : p
+          ),
+        }));
+      },
+
+      deleteProfile: (id) => {
+        set((state) => ({
+          savedProfiles: state.savedProfiles.filter((p) => p.id !== id),
+        }));
+      },
+
+      // History actions
+      addComparison: (result, snapshot) => {
+        const enriched: ComparisonResult = {
+          ...result,
+          id: crypto.randomUUID(),
+          timestamp: Date.now(),
+          snapshot: snapshot ?? result.snapshot,
+        };
+        set((state) => ({
+          comparisonHistory: [enriched, ...state.comparisonHistory].slice(0, 10),
+        }));
+      },
+
+      deleteHistoryEntry: (id) => {
+        set((state) => ({
+          comparisonHistory: state.comparisonHistory.filter((entry) => entry.id !== id),
         }));
       },
 
       clearHistory: () => set({ comparisonHistory: [] }),
 
+      // Unit actions
       setUnits: (preference) => {
-        console.log("[Analytics] unit_preference_changed", { preference });
         set({ unitPreference: preference });
       },
     }),
     {
-      name: "lever-storage", // localStorage key
+      name: "lever-storage",
       storage: createJSONStorage(() => localStorage),
-      // Only persist certain fields
       partialize: (state) => ({
-        currentProfile: state.currentProfile,
+        savedProfiles: state.savedProfiles,
+        comparisonHistory: state.comparisonHistory,
         unitPreference: state.unitPreference,
-        // Don't persist comparison history to localStorage (can get large)
       }),
     }
   )

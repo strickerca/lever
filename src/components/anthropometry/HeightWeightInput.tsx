@@ -1,7 +1,8 @@
 "use client";
 
 import { Sex } from "@/types";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useUnits } from "@/hooks/useUnits";
 
 interface HeightWeightInputProps {
   height: number; // in meters
@@ -16,23 +17,20 @@ export function HeightWeightInput({
   sex,
   onChange,
 }: HeightWeightInputProps) {
-  const [heightUnit, setHeightUnit] = useState<"cm" | "inches">("cm");
-  const [weightUnit, setWeightUnit] = useState<"kg" | "lbs">("kg");
+  const { height: heightUnit, weight: weightUnit, setUnits } = useUnits();
 
   // Local state for inputs to allow typing
-  const [heightInput, setHeightInput] = useState<string>("");
-  const [weightInput, setWeightInput] = useState<string>("");
+  const [heightInput, setHeightInput] = useState<string>(
+    heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1)
+  );
+  const [weightInput, setWeightInput] = useState<string>(
+    weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1)
+  );
+  const [isHeightEditing, setIsHeightEditing] = useState(false);
+  const [isWeightEditing, setIsWeightEditing] = useState(false);
 
-  // Update local state when props change
-  useEffect(() => {
-    const displayHeight = heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1);
-    setHeightInput(displayHeight);
-  }, [height, heightUnit]);
-
-  useEffect(() => {
-    const displayWeight = weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1);
-    setWeightInput(displayWeight);
-  }, [weight, weightUnit]);
+  const displayHeightInput = heightUnit === "cm" ? (height * 100).toFixed(0) : (height * 39.3701).toFixed(1);
+  const displayWeightInput = weightUnit === "kg" ? weight.toFixed(1) : (weight * 2.20462).toFixed(1);
 
   const handleHeightChange = (value: string) => {
     setHeightInput(value);
@@ -72,40 +70,62 @@ export function HeightWeightInput({
     <div className="space-y-4">
       {/* Height Input */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-slate-400 mb-2">
           Height
         </label>
         <div className="flex gap-2">
           <input
             type="number"
-            value={heightInput}
-            onChange={(e) => handleHeightChange(e.target.value)}
-            onBlur={handleHeightBlur}
+            value={isHeightEditing ? heightInput : displayHeightInput}
+            onChange={(e) => {
+              if (!isHeightEditing) setIsHeightEditing(true);
+              handleHeightChange(e.target.value);
+            }}
+            onBlur={() => {
+              setIsHeightEditing(false);
+              handleHeightBlur();
+            }}
             onKeyDown={(e) => e.key === "Enter" && handleHeightBlur()}
-            onFocus={(e) => e.target.select()}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+            onFocus={(e) => {
+              setIsHeightEditing(true);
+              setHeightInput(displayHeightInput);
+              e.target.select();
+            }}
+            className="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white font-medium"
             step={heightUnit === "cm" ? "1" : "0.1"}
           />
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          <div className="flex rounded-lg border border-slate-700 overflow-hidden">
             <button
               type="button"
-              onClick={() => setHeightUnit("cm")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                heightUnit === "cm"
-                  ? "bg-blue-500 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+              onClick={() => {
+                const current = parseFloat(isHeightEditing ? heightInput : displayHeightInput);
+                setUnits("metric");
+                if (!isNaN(current)) {
+                  const converted = heightUnit === "inches" ? current * 2.54 : current;
+                  setHeightInput(converted.toFixed(0));
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${heightUnit === "cm"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                }`}
             >
               cm
             </button>
             <button
               type="button"
-              onClick={() => setHeightUnit("inches")}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
-                heightUnit === "inches"
-                  ? "bg-blue-500 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+              onClick={() => {
+                const current = parseFloat(isHeightEditing ? heightInput : displayHeightInput);
+                setUnits("imperial");
+                if (!isNaN(current)) {
+                  const converted = heightUnit === "cm" ? current / 2.54 : current;
+                  setHeightInput(converted.toFixed(1));
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-l border-slate-700 ${heightUnit === "inches"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                }`}
             >
               in
             </button>
@@ -115,40 +135,62 @@ export function HeightWeightInput({
 
       {/* Weight Input */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-slate-400 mb-2">
           Weight
         </label>
         <div className="flex gap-2">
           <input
             type="number"
-            value={weightInput}
-            onChange={(e) => handleWeightChange(e.target.value)}
-            onBlur={handleWeightBlur}
+            value={isWeightEditing ? weightInput : displayWeightInput}
+            onChange={(e) => {
+              if (!isWeightEditing) setIsWeightEditing(true);
+              handleWeightChange(e.target.value);
+            }}
+            onBlur={() => {
+              setIsWeightEditing(false);
+              handleWeightBlur();
+            }}
             onKeyDown={(e) => e.key === "Enter" && handleWeightBlur()}
-            onFocus={(e) => e.target.select()}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+            onFocus={(e) => {
+              setIsWeightEditing(true);
+              setWeightInput(displayWeightInput);
+              e.target.select();
+            }}
+            className="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white font-medium"
             step="0.1"
           />
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          <div className="flex rounded-lg border border-slate-700 overflow-hidden">
             <button
               type="button"
-              onClick={() => setWeightUnit("kg")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                weightUnit === "kg"
-                  ? "bg-blue-500 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+              onClick={() => {
+                const current = parseFloat(isWeightEditing ? weightInput : displayWeightInput);
+                setUnits("metric");
+                if (!isNaN(current)) {
+                  const converted = weightUnit === "lbs" ? current / 2.20462 : current;
+                  setWeightInput(converted.toFixed(1));
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${weightUnit === "kg"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                }`}
             >
               kg
             </button>
             <button
               type="button"
-              onClick={() => setWeightUnit("lbs")}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
-                weightUnit === "lbs"
-                  ? "bg-blue-500 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+              onClick={() => {
+                const current = parseFloat(isWeightEditing ? weightInput : displayWeightInput);
+                setUnits("imperial");
+                if (!isNaN(current)) {
+                  const converted = weightUnit === "kg" ? current * 2.20462 : current;
+                  setWeightInput(converted.toFixed(1));
+                }
+              }}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-l border-slate-700 ${weightUnit === "lbs"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                }`}
             >
               lbs
             </button>
@@ -158,13 +200,13 @@ export function HeightWeightInput({
 
       {/* Sex Selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-slate-400 mb-2">
           Sex
         </label>
         <select
           value={sex}
           onChange={(e) => onChange({ height, weight, sex: e.target.value as Sex })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+          className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white font-medium"
         >
           <option value={Sex.MALE}>Male</option>
           <option value={Sex.FEMALE}>Female</option>

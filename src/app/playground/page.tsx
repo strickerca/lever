@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LiftFamily, Sex } from "@/types";
+import { Anthropometry, LiftFamily, SegmentLengths, Sex } from "@/types";
 import { createSimpleProfile } from "@/lib/biomechanics/anthropometry";
-import { createPoseSolver } from "@/lib/animation/movements";
+import { createPoseSolver, getThrusterROMParts } from "@/lib/animation/movements";
 import { getAnimationPhase, calculateRepCycle } from "@/lib/animation/Animator";
 import { Pose2D, MovementOptions } from "@/lib/animation/types";
+import { PULLUP_BAR_HEIGHT_M } from "@/lib/animation/constants";
+import { STANDARD_PLATE_RADIUS } from "@/lib/biomechanics/constants";
 
 const SCALE_PX_PER_METER = 200; // 200 pixels per meter
 
 export default function AnimationPlayground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const drawFrameRef = useRef<(pValue: number, timeSeconds: number, frame: number) => void>(() => {});
   const [frameCount, setFrameCount] = useState(0);
   const [time, setTime] = useState(0);
   const [p, setP] = useState(0);
@@ -55,7 +58,7 @@ export default function AnimationPlayground() {
       setP(pValue);
 
       // Draw frame
-      drawFrame(pValue, elapsed, frame);
+      drawFrameRef.current(pValue, elapsed, frame);
 
       animationFrameRef.current = requestAnimationFrame(animate);
     };
@@ -92,12 +95,16 @@ export default function AnimationPlayground() {
 
       // Calculate ROM
       const romA = solver.getROM({ anthropometry: lifterA, movement, options });
-      const romB = solver.getROM({ anthropometry: lifterB, movement, options });
-
       // Get animation phase
       const velocity = 0.4; // m/s
       const cycleConfig = calculateRepCycle(romA, velocity);
-      const phase = getAnimationPhase(movement, pValue, cycleConfig);
+      const phase =
+        movement === LiftFamily.THRUSTER
+          ? (() => {
+              const { squatROM, pressROM } = getThrusterROMParts(lifterA);
+              return getAnimationPhase(movement, pValue, cycleConfig, squatROM, pressROM);
+            })()
+          : getAnimationPhase(movement, pValue, cycleConfig);
 
       // Solve poses
       const resultA = solver.solve({
@@ -161,26 +168,117 @@ export default function AnimationPlayground() {
 
       // Draw segment validation if enabled
       if (showSegmentLengths) {
+        if (movement === LiftFamily.PULLUP) {
+          drawPullupIKDebug(ctx, solver, resultA.pose, offsetXA, groundY, lifterA, "#2563EB");
+          drawPullupIKDebug(ctx, solver, resultB.pose, offsetXB, groundY, lifterB, "#EA580C");
+        }
+
         drawSegmentValidation(
           ctx,
           resultA.pose,
           offsetXA,
           groundY,
-          lifterA.segments,
-          "#2563EB"
+          lifterA.segments
         );
         drawSegmentValidation(
           ctx,
           resultB.pose,
           offsetXB,
           groundY,
-          lifterB.segments,
-          "#EA580C"
+          lifterB.segments
         );
       }
     } catch (error) {
       setLastError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+  drawFrameRef.current = drawFrame;
+
+  function drawPullupIKDebug(
+    ctx: CanvasRenderingContext2D,
+    solver: ReturnType<typeof createPoseSolver>,
+    pose: Pose2D,
+    offsetX: number,
+    groundY: number,
+    anthropometry: Anthropometry,
+    color: string
+  ) {
+    const toCanvas = (pos: { x: number; y: number }) => ({
+      x: offsetX + pos.x * SCALE_PX_PER_METER,
+      y: groundY - pos.y * SCALE_PX_PER_METER,
+    });
+
+    // Elbow path (sampled across a rep)
+    const samples = 18;
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= samples; i++) {
+      const s = i / samples;
+      const samplePhase = {
+        t: s,
+        phase: "concentric" as const,
+        phaseProgress: s,
+        barHeightNormalized: s,
+      };
+      const samplePose = solver.solve({
+        anthropometry,
+        movement: LiftFamily.PULLUP,
+        options,
+        phase: samplePhase,
+      }).pose;
+
+      const elbow = samplePose.elbow ? toCanvas(samplePose.elbow) : null;
+      if (!elbow) continue;
+      if (i === 0) ctx.moveTo(elbow.x, elbow.y);
+      else ctx.lineTo(elbow.x, elbow.y);
+    }
+    ctx.stroke();
+
+    // Bar height reference
+    const barY = groundY - PULLUP_BAR_HEIGHT_M * SCALE_PX_PER_METER;
+    ctx.strokeStyle = "#111827";
+    ctx.globalAlpha = 0.15;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(offsetX - 140, barY);
+    ctx.lineTo(offsetX + 140, barY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Pole vector + targets (current frame)
+    const pullupDebug = pose.debug?.pullup;
+    if (pullupDebug?.pole) {
+      const shoulder = toCanvas(pose.shoulder);
+      const pole = toCanvas(pullupDebug.pole);
+
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(shoulder.x, shoulder.y);
+      ctx.lineTo(pole.x, pole.y);
+      ctx.stroke();
+
+      const drawDot = (p: { x: number; y: number }, r: number, fill: string) => {
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = "#111827";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      };
+
+      drawDot(pole, 4, "#F59E0B"); // amber
+
+      if (pullupDebug.elbowBase) drawDot(toCanvas(pullupDebug.elbowBase), 3, "#60A5FA"); // blue-400
+      if (pullupDebug.elbowTarget) drawDot(toCanvas(pullupDebug.elbowTarget), 3, "#34D399"); // emerald-400
+    }
+
+    ctx.restore();
   }
 
   function drawHUD(
@@ -219,7 +317,7 @@ export default function AnimationPlayground() {
     pose: Pose2D,
     offsetX: number,
     groundY: number,
-    anthropometry: any,
+    anthropometry: Anthropometry,
     color: string,
     label: string
   ) {
@@ -289,22 +387,41 @@ export default function AnimationPlayground() {
     // Draw bar (if present)
     if (pose.bar) {
       const bar = toCanvas(pose.bar);
-      ctx.fillStyle = "#374151";
-      ctx.strokeStyle = "#FFFFFF";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(bar.x, bar.y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
 
-      // Barbell
-      const barLength = 30;
-      ctx.strokeStyle = "#374151";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(bar.x - barLength, bar.y);
-      ctx.lineTo(bar.x + barLength, bar.y);
-      ctx.stroke();
+      if (movement === LiftFamily.DEADLIFT || movement === LiftFamily.BENCH) {
+        // Strict side/profile view: show a single near-side plate, no bar shaft.
+        const plateRadiusPx = STANDARD_PLATE_RADIUS * SCALE_PX_PER_METER;
+        ctx.fillStyle = "#F9FAFB";
+        ctx.strokeStyle = "#111827";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(bar.x, bar.y, plateRadiusPx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = "#111827";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bar.x, bar.y, plateRadiusPx * 0.35, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "#374151";
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bar.x, bar.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Barbell
+        const barLength = 30;
+        ctx.strokeStyle = "#374151";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(bar.x - barLength, bar.y);
+        ctx.lineTo(bar.x + barLength, bar.y);
+        ctx.stroke();
+      }
     }
 
     // Label
@@ -319,8 +436,7 @@ export default function AnimationPlayground() {
     pose: Pose2D,
     offsetX: number,
     groundY: number,
-    segments: any,
-    color: string
+    segments: SegmentLengths
   ) {
     const toCanvas = (pos: { x: number; y: number }) => ({
       x: offsetX + pos.x * SCALE_PX_PER_METER,
@@ -331,8 +447,6 @@ export default function AnimationPlayground() {
     const knee = toCanvas(pose.knee);
     const hip = toCanvas(pose.hip);
     const shoulder = toCanvas(pose.shoulder);
-    const elbow = pose.elbow ? toCanvas(pose.elbow) : null;
-    const wrist = pose.wrist ? toCanvas(pose.wrist) : null;
 
     const TOLERANCE = 0.001; // 1mm
 
@@ -394,7 +508,7 @@ export default function AnimationPlayground() {
             Animation Debug Playground
           </h1>
           <p className="text-gray-600">
-            This playground tests the animation pipeline with visible debugging. The <span className="font-mono text-red-500">p</span> value must change from 0→1→0 continuously. If it's not changing, the animation is broken.
+            This playground tests the animation pipeline with visible debugging. The <span className="font-mono text-red-500">p</span> value must change from 0→1→0 continuously. If it&apos;s not changing, the animation is broken.
           </p>
         </div>
 

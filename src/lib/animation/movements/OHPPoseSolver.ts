@@ -10,6 +10,7 @@
 
 import { solveOHPKinematics } from "@/lib/biomechanics/kinematics";
 import { calculateOHPDisplacement } from "@/lib/biomechanics/physics";
+import { Anthropometry } from "@/types";
 import { Pose2D, PoseSolverInput, PoseSolverResult } from "../types";
 import { PoseSolver, KinematicsUtils } from "../PoseSolver";
 
@@ -42,61 +43,99 @@ export class OHPPoseSolver extends PoseSolver {
   }
 
   private generatePose(
-    anthropometry: any,
-    lockoutKinematics: any,
-    progress: number // 0 = rack position (shoulders), 1 = lockout (overhead)
+    anthropometry: Anthropometry,
+    lockoutKinematics: ReturnType<typeof solveOHPKinematics>,
+    progress: number // 0 = rack position, 1 = lockout
   ): Pose2D {
+    void lockoutKinematics;
     const segments = anthropometry.segments;
-    const lockout = lockoutKinematics.positions;
 
-    // Standing position - legs straight, trunk vertical
+    // =========================================================================
+    // 1. SETUP BODY POSITIONS
+    // =========================================================================
+
+    // Base linkage (Standing rigidly)
     const ankle = { x: 0, y: segments.footHeight };
     const knee = { x: 0, y: ankle.y + segments.tibia };
     const hip = { x: 0, y: knee.y + segments.femur };
     const shoulder = { x: 0, y: hip.y + segments.torso };
 
-    // Bar position: from upper chest height to overhead
+    // =========================================================================
+    // 2. CALCULATE BAR PATH (Diagonal Line)
+    // =========================================================================
+
+    // Start Position (Rack):
+    // Bar is resting on front delts.
+    // X: Forward of shoulder center (approx 15-20cm)
+    // Y: At upper chest height (approx shoulder height + small constant)
+    const startBarX = 0.20; // 20cm forward (Standard Front Rack)
+    const startBarY = shoulder.y + 0.05; // Slightly above joint center
+
+    // End Position (Lockout):
+    // Bar is directly overhead (centered).
+    // X: 0 (Stacked)
+    // Y: Shoulder + Arm Length
     const armLength = segments.upperArm + segments.forearm;
-    const barAtStart = shoulder.y + 0.1; // Just above shoulders (rack position)
-    const barAtLockout = lockout.bar.y;
-    const barY = barAtStart + (barAtLockout - barAtStart) * progress;
-    const bar = { x: 0, y: barY };
+    const endBarX = 0;
+    const endBarY = shoulder.y + armLength;
 
-    // Calculate arm angles for press movement
-    // At start: arms bent with elbows forward
-    // At lockout: arms straight overhead
+    // Linear Interpolation for "Diagonal Motion"
+    // Use smoothed t for natural acceleration/deceleration
+    const t = Math.max(0, Math.min(1, progress));
+    const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // Ease in/out
 
-    // Shoulder angle (upper arm direction)
-    const shoulderAngleStart = Math.PI / 2 + 0.3; // Slightly forward from vertical
-    const shoulderAngleLockout = Math.PI / 2; // Straight up
-    const shoulderAngleRad = shoulderAngleStart + (shoulderAngleLockout - shoulderAngleStart) * progress;
+    const currentBarX = startBarX + (endBarX - startBarX) * easedT;
+    const currentBarY = startBarY + (endBarY - startBarY) * easedT;
+    const wrist = { x: currentBarX, y: currentBarY };
 
-    // Elbow angle (forearm direction)
-    // At start: forearm points up and back (bent elbow)
-    // At lockout: forearm continues upper arm direction (straight)
-    const elbowAngleStart = Math.PI / 2 + 0.6; // More vertical than upper arm
-    const elbowAngleLockout = shoulderAngleLockout; // Same as shoulder = straight
-    const elbowAngleRad = elbowAngleStart + (elbowAngleLockout - elbowAngleStart) * progress;
+    // =========================================================================
+    // 3. SOLVE ARM IK (Shoulder -> Elbow -> Wrist)
+    // =========================================================================
 
-    // Build arm chain with proper forward kinematics
-    const armChain = KinematicsUtils.buildArmChain(
+    // We need to find the Elbow position.
+    // Triangle: Shoulder, Elbow, Wrist.
+    // Knowns: Shoulder Pos, Wrist Pos, UpperArm Len, Forearm Len.
+
+    const ikResultCw = KinematicsUtils.solveTwoLinkIK(
       shoulder,
+      wrist,
       segments.upperArm,
       segments.forearm,
-      shoulderAngleRad,
-      elbowAngleRad
+      "cw"
     );
 
-    const elbow = armChain.elbow;
-    const wrist = armChain.wrist;
+    const ikResultCcw = KinematicsUtils.solveTwoLinkIK(
+      shoulder,
+      wrist,
+      segments.upperArm,
+      segments.forearm,
+      "ccw"
+    );
 
-    // Update bar position to match where wrists are (ensures rigid segments)
-    const actualBar = { x: wrist.x, y: wrist.y };
+    // Determine which solution is "Front".
+    // Since we are facing "Right" (+X), "Front" usually means larger X.
+    let elbow = ikResultCw.joint;
 
-    // Calculate actual elbow angle for display
+    // Pick the solution with higher X (most forward elbow)
+    // This naturally creates the "elbows forward/under bar" look of a press
+    if (ikResultCcw.joint.x > ikResultCw.joint.x) {
+      elbow = ikResultCcw.joint;
+    }
+
+    // =========================================================================
+    // 4. GENERATE OUTPUT
+    // =========================================================================
+
+    // Calculate angles for rendering/debug
+    const shoulderAngleRad = Math.atan2(elbow.y - shoulder.y, elbow.x - shoulder.x);
+    const elbowAngleRad = Math.atan2(wrist.y - elbow.y, wrist.x - elbow.x);
+
+    // Relative elbow angle (interior)
+    // Vector U (Shoulder->Elbow), Vector F (Elbow->Wrist)
+    // Angle = acos( dot(U,F) / (|U|*|F|) )? No, usually simpler.
+    // Just use what we have.
     const elbowAngleDeg = KinematicsUtils.toDegrees(elbowAngleRad - shoulderAngleRad) + 180;
 
-    // Contact points
     return {
       ankle,
       knee,
@@ -104,22 +143,24 @@ export class OHPPoseSolver extends PoseSolver {
       shoulder,
       elbow,
       wrist,
-      bar: actualBar,
+      toe: { x: ankle.x + segments.footLength, y: 0 },
+      bar: wrist,
       contacts: {
         leftFoot: { x: -0.15, y: segments.footHeight },
         rightFoot: { x: 0.15, y: segments.footHeight },
-        leftHand: { x: -0.25, y: actualBar.y },
-        rightHand: { x: 0.25, y: actualBar.y },
+        // Hands centered on the bar X
+        leftHand: { x: wrist.x - 0.25, y: wrist.y },
+        rightHand: { x: wrist.x + 0.25, y: wrist.y },
       },
       angles: {
         ankle: 90,
         knee: 180,
         hip: 180,
-        trunk: 0, // Vertical
+        trunk: 0,
         shoulder: KinematicsUtils.toDegrees(shoulderAngleRad),
         elbow: elbowAngleDeg,
       },
-      barAngle: 0, // Horizontal
+      barAngle: 0,
     };
   }
 }

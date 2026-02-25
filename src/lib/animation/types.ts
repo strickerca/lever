@@ -23,6 +23,7 @@ export interface Pose2D {
   shoulder: Point2D;
   elbow: Point2D;
   wrist: Point2D;
+  toe: Point2D;
 
   // Equipment positions (movement-specific, can be null)
   bar: Point2D | null;
@@ -47,6 +48,17 @@ export interface Pose2D {
 
   // Bar orientation (for bench/OHP where bar may not be horizontal)
   barAngle?: number;  // degrees from horizontal (0 = horizontal)
+
+  // Optional debug payload for visualization tooling
+  debug?: {
+    pullup?: {
+      elbowBase?: Point2D;
+      elbowTarget?: Point2D;
+      pole?: Point2D;
+      tuck?: number;
+      axis?: { x: number; y: number };
+    };
+  };
 }
 
 /**
@@ -64,13 +76,14 @@ export interface AnimationPhase {
 
   // Current phase name
   phase:
-    | "eccentric"      // Lowering/descending
-    | "transition"     // Pause at bottom/top
-    | "concentric"     // Raising/ascending
-    | "squat_down"     // Thruster: squat descend
-    | "squat_up"       // Thruster: squat ascend
-    | "press_up"       // Thruster: press ascend
-    | "press_down";    // Thruster: press descend
+  | "eccentric"      // Lowering/descending
+  | "transition"     // Pause at bottom/top
+  | "concentric"     // Raising/ascending
+  | "squat_down"     // Thruster: squat descend
+  | "squat_up"       // Thruster: squat ascend
+  | "press_up"       // Thruster: press ascend
+  | "press_down"     // Thruster: press descend
+  | "pause_top";     // Thruster: hold at top
 
   // Progress within current phase (0 to 1)
   phaseProgress: number;
@@ -100,6 +113,7 @@ export interface MovementOptions {
   // Squat options
   squatVariant?: "highBar" | "lowBar" | "front";
   squatStance?: "narrow" | "normal" | "wide" | "ultraWide";
+  squatDepth?: "parallel" | "belowParallel";
 
   // Deadlift options
   deadliftVariant?: "conventional" | "sumo";
@@ -109,20 +123,125 @@ export interface MovementOptions {
   // Bench options
   benchGrip?: "narrow" | "medium" | "wide";
   benchArch?: "flat" | "moderate" | "competitive" | "extreme";
+  chestSize?: "small" | "average" | "large";
 
   // Pullup options
   pullupGrip?: "supinated" | "neutral" | "pronated";
   pullupLoad?: number;  // Added weight in kg
 
+  // =============================================================================
+  // PULLUP ANIMATION TUNING (StrongLifts 5-Phase Style)
+  // =============================================================================
+  // These options control the "up and back" arc motion for realistic pull-up animation.
+  // See constants.ts for default values and detailed documentation.
+
+  /**
+   * Maximum backward arc displacement as fraction of body height.
+   * Controls how far back the body travels at mid-rep.
+   * Range: 0.06-0.12. Default: PULLUP_ARC_MAX_BACK_FRAC (0.08)
+   */
+  pullupArcMaxBackFrac?: number;
+
+  /**
+   * Additional backward offset at TOP of rep (fraction of body height).
+   * Ensures head/chin stays behind bar at lockout.
+   * Range: 0.03-0.06. Default: PULLUP_TOP_CLEARANCE_BACK_FRAC (0.045)
+   */
+  pullupTopClearanceBackFrac?: number;
+
+  /**
+   * Progress value (0-1) where the backward arc peaks.
+   * 0.5 = mid-rep, 0.6+ = later peak (more "pull behind bar" at top).
+   * Default: PULLUP_ARC_PEAK_PROGRESS (0.55)
+   */
+  pullupArcPeakProgress?: number;
+
+  /**
+   * Scapular initiation phase duration (0-1).
+   * First X% of rep has minimal elbow bend while scaps depress/retract.
+   * Default: PULLUP_SCAP_INIT_DURATION (0.15)
+   */
+  pullupScapInitDuration?: number;
+
+  /**
+   * Torso lean-back angle at top position (degrees).
+   * Higher values = more backward lean. 15-25 is realistic.
+   * Default: PULLUP_TOP_LEAN_BACK_DEG (20)
+   */
+  pullupTopLeanBackDeg?: number;
+
+  /**
+   * Head clearance margin (meters).
+   * Minimum distance head must stay behind bar plane (x=0).
+   * Default: PULLUP_HEAD_CLEARANCE_MARGIN_M (0.04)
+   */
+  pullupHeadClearanceMarginM?: number;
+
+  // Legacy options (kept for backwards compatibility)
+  pullupElbowTuck?: number;
+  pullupElbowBehind?: number;
+  pullupTopLeanBack?: number;
+  pullupTopBackOffsetFrac?: number;
+  pullupBackBlendStart?: number;
+  pullupTopHeadBackClearanceFrac?: number;
+  pullupTopChinClearanceFrac?: number;
+  pullupPoleVectorAngleDeg?: number;
+  pullupElbowDropTopFrac?: number;
+  pullupElbowFrontMarginFrac?: number;
+  pullupElbowFrontReleaseStart?: number;
+
   // Pushup options
   pushupWidth?: "narrow" | "normal" | "wide";
   pushupWeight?: number;  // Added weight in kg
+
+  // =============================================================================
+  // PUSHUP ANIMATION TUNING (Proper Form - Jeff Nippard style)
+  // =============================================================================
+  // These options control push-up form with proper elbow tuck and body path.
+  // Reference: https://builtwithscience.com/fitness-tips/perfect-push-up-form/
+
+  /**
+   * Forward shift at bottom as fraction of arm length.
+   * Body shifts forward as you descend. Default: 0.10
+   */
+  pushupBottomForwardShiftFrac?: number;
+
+  /**
+   * Elbow tuck angle in degrees (overhead view).
+   * 90° = flared, 0° = tucked, 45° = optimal. Default: 45
+   */
+  pushupElbowTuckAngleDeg?: number;
+
+  /**
+   * Minimum elbow angle at bottom (degrees).
+   * ~90° means upper arm parallel to ground. Default: 90
+   */
+  pushupBottomElbowAngleDeg?: number;
+
+  /**
+   * Body angle from horizontal (degrees).
+   * Positive = head higher than feet. Default: 8
+   */
+  pushupBodyAngleDeg?: number;
+
+  /**
+   * Scapular protraction at top (0-1).
+   * Higher = more shoulder rounding at lockout. Default: 0.8
+   */
+  pushupTopScapProtraction?: number;
+
+  /**
+   * Hand width as fraction of shoulder width.
+   * 1.0 = shoulder width, 1.2 = wider. Default: 1.1
+   */
+  pushupHandWidthFrac?: number;
 
   // OHP options
   ohpStyle?: "strict" | "push_press";
 
   // General options
   pauseDuration?: number;  // Seconds to pause at bottom/top
+  load?: number;           // General external load in kg (for all lifts)
 }
 
 /**

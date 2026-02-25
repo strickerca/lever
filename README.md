@@ -2,6 +2,12 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Runtime Requirements
+
+- Preferred: Node.js `24.13.1` (see `.nvmrc`)
+- Supported: Node.js `>=20.9.0 <25`
+- npm: `>=10`
+
 First, run the development server:
 
 ```bash

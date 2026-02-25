@@ -6,13 +6,23 @@
  * 1. Squat down (front squat descent)
  * 2. Squat up (front squat ascent)
  * 3. Press up (overhead press)
- * 4. Press down (lower to shoulders)
+ * 4. Pause (overhead lockout)
+ * 5. Press down (lower to shoulders)
  */
 
 import { solveSquatKinematics } from "@/lib/biomechanics/kinematics";
 import { calculateOHPDisplacement } from "@/lib/biomechanics/physics";
+import { Anthropometry } from "@/types";
 import { Pose2D, PoseSolverInput, PoseSolverResult } from "../types";
 import { PoseSolver, KinematicsUtils } from "../PoseSolver";
+
+export function getThrusterROMParts(anthropometry: Anthropometry): { squatROM: number; pressROM: number } {
+  const squatKinematics = solveSquatKinematics(anthropometry, "front");
+  const squatROM = squatKinematics.displacement;
+  const pressROM = calculateOHPDisplacement(anthropometry);
+
+  return { squatROM, pressROM };
+}
 
 export class ThrusterPoseSolver extends PoseSolver {
   solve(input: PoseSolverInput): PoseSolverResult {
@@ -33,17 +43,14 @@ export class ThrusterPoseSolver extends PoseSolver {
   getROM(input: Omit<PoseSolverInput, "phase">): number {
     const { anthropometry } = input;
 
-    // Total ROM is squat ROM + press ROM
-    const squatKinematics = solveSquatKinematics(anthropometry, "front");
-    const squatROM = squatKinematics.displacement;
-    const pressROM = calculateOHPDisplacement(anthropometry);
-
+    const { squatROM, pressROM } = getThrusterROMParts(anthropometry);
     return squatROM + pressROM;
   }
 
-  private generatePoseForPhase(anthropometry: any, phase: any): Pose2D {
-    const segments = anthropometry.segments;
-
+  private generatePoseForPhase(
+    anthropometry: Anthropometry,
+    phase: PoseSolverInput["phase"]
+  ): Pose2D {
     switch (phase.phase) {
       case "squat_down":
       case "squat_up":
@@ -51,6 +58,7 @@ export class ThrusterPoseSolver extends PoseSolver {
 
       case "press_up":
       case "press_down":
+      case "pause_top":
         return this.generatePressPose(anthropometry, phase);
 
       default:
@@ -58,12 +66,22 @@ export class ThrusterPoseSolver extends PoseSolver {
     }
   }
 
-  private generateSquatPose(anthropometry: any, phase: any): Pose2D {
+  private generateSquatPose(
+    anthropometry: Anthropometry,
+    phase: PoseSolverInput["phase"]
+  ): Pose2D {
+    // Asymmetric Cycle:
+    // Squat Down: Straight Legs (Rack) -> Bottom
+    // Squat Up: Bottom -> Bent Legs (High Squat/Kinematic Blend)
+
+    // Scaling factor for giant/small lifters
+    // Base height reference ~1.75m
+    const heightScale = anthropometry.segments.height / 1.75;
+
     // Use front squat kinematics
     const bottomKinematics = solveSquatKinematics(anthropometry, "front");
     const squatProgress = phase.phase === "squat_down" ? 1 - phase.phaseProgress : phase.phaseProgress;
 
-    // Similar to SquatPoseSolver interpolation
     const segments = anthropometry.segments;
     const bottom = bottomKinematics.positions;
 
@@ -75,9 +93,20 @@ export class ThrusterPoseSolver extends PoseSolver {
     const femurAngleBottom = calcAngle(bottom.knee, bottom.hip);
     const torsoAngleBottom = calcAngle(bottom.hip, bottom.shoulder);
 
-    const tibiaAngleTop = Math.PI / 2;
-    const femurAngleTop = Math.PI / 2;
-    const torsoAngleTop = Math.PI / 2;
+    // Determines 'Top' Pose based on direction
+    const vertical = Math.PI / 2;
+    const EXTENSION_OFFSET = 0.2 * heightScale;
+
+    let tibiaAngleTop = vertical;
+    let femurAngleTop = vertical;
+    const torsoAngleTop = vertical;
+
+    if (phase.phase === "squat_up") {
+      // Upward Drive: Target "Bent" pose for Kinematic Blend
+      tibiaAngleTop = vertical - EXTENSION_OFFSET / 2;
+      femurAngleTop = vertical + EXTENSION_OFFSET / 2;
+    }
+    // Else (squat_down): Target "Straight" pose for Start position
 
     const tibiaAngle = tibiaAngleBottom + (tibiaAngleTop - tibiaAngleBottom) * squatProgress;
     const femurAngle = femurAngleBottom + (femurAngleTop - femurAngleBottom) * squatProgress;
@@ -94,96 +123,167 @@ export class ThrusterPoseSolver extends PoseSolver {
       torsoAngle
     );
 
-    // Bar at shoulder height (front rack position)
-    const bar = { x: 0, y: chain.shoulder.y + 0.1 };
+    // Bar at shoulder height (Front Rack Position)
+    // Needs to be robust to body position. Anchor to shoulder.
+    // Scale offsets for large/small lifters
+    const rackOffsetX = 0.20 * heightScale;
+    const rackOffsetY = 0.05 * heightScale;
+    const bar = { x: chain.shoulder.x + rackOffsetX, y: chain.shoulder.y + rackOffsetY };
 
-    // Arms in front rack position (elbows high)
-    const elbowAngleRad = Math.PI / 2 + 0.3; // Elbows up
-    const armChain = KinematicsUtils.buildArmChain(
-      chain.shoulder,
-      segments.upperArm,
-      segments.forearm,
-      elbowAngleRad,
-      elbowAngleRad
-    );
+    // Arms in front rack position
+    const wrist = { x: bar.x, y: bar.y };
+    const ikCw = KinematicsUtils.solveTwoLinkIK(chain.shoulder, wrist, segments.upperArm, segments.forearm, "cw");
+    const ikCcw = KinematicsUtils.solveTwoLinkIK(chain.shoulder, wrist, segments.upperArm, segments.forearm, "ccw");
+    let elbow = ikCw.joint;
+    if (ikCcw.joint.x > ikCw.joint.x) elbow = ikCcw.joint;
+
+    const shoulderAngleRad = Math.atan2(elbow.y - chain.shoulder.y, elbow.x - chain.shoulder.x);
+    const elbowAngleRad = Math.atan2(wrist.y - elbow.y, wrist.x - elbow.x);
+    const shoulderDeg = KinematicsUtils.toDegrees(shoulderAngleRad);
+    const elbowDeg = KinematicsUtils.toDegrees(elbowAngleRad - shoulderAngleRad) + 180;
+
+    const handSpacing = 0.25 * heightScale;
+    const footSpacing = 0.15 * heightScale;
 
     return {
       ankle,
       knee: chain.knee,
       hip: chain.hip,
       shoulder: chain.shoulder,
-      elbow: armChain.elbow,
-      wrist: armChain.wrist,
+      elbow,
+      wrist,
+      toe: { x: ankle.x + segments.footLength, y: ankle.y },
       bar,
       contacts: {
-        leftFoot: { x: -0.15, y: segments.footHeight },
-        rightFoot: { x: 0.15, y: segments.footHeight },
-        leftHand: { x: -0.25, y: bar.y },
-        rightHand: { x: 0.25, y: bar.y },
+        leftFoot: { x: -footSpacing, y: segments.footHeight },
+        rightFoot: { x: footSpacing, y: segments.footHeight },
+        leftHand: { x: bar.x - handSpacing, y: bar.y },
+        rightHand: { x: bar.x + handSpacing, y: bar.y },
       },
       angles: {
         ankle: KinematicsUtils.toDegrees(tibiaAngle - Math.PI / 2),
         knee: KinematicsUtils.toDegrees(femurAngle - tibiaAngle),
         hip: KinematicsUtils.toDegrees(torsoAngle - femurAngle),
         trunk: KinematicsUtils.toDegrees(Math.PI / 2 - torsoAngle),
-        shoulder: KinematicsUtils.toDegrees(elbowAngleRad),
-        elbow: 90,
+        shoulder: shoulderDeg,
+        elbow: elbowDeg,
       },
+      barAngle: 0,
     };
   }
 
-  private generatePressPose(anthropometry: any, phase: any): Pose2D {
-    // Standing with overhead press
+  private generatePressPose(
+    anthropometry: Anthropometry,
+    phase: PoseSolverInput["phase"]
+  ): Pose2D {
+    // Asymmetric Cycle:
+    // Press Up: Bent Legs (High Squat) -> Lockout
+    // Press Down: Lockout -> Straight Legs (Rack)
+
+    const heightScale = anthropometry.segments.height / 1.75;
+
+    let progress = 0;
+    if (phase.phase === "press_up") progress = phase.phaseProgress;
+    else if (phase.phase === "press_down") progress = 1 - phase.phaseProgress;
+    else if (phase.phase === "pause_top") progress = 1.0;
+
     const segments = anthropometry.segments;
-    const pressProgress = phase.phase === "press_up" ? phase.phaseProgress : 1 - phase.phaseProgress;
+    const EXTENSION_OFFSET = 0.2 * heightScale;
+    const vertical = Math.PI / 2;
+
+    // Determine Start Pose (0.0 progress)
+    let tibiaAngleStart = vertical;
+    let femurAngleStart = vertical;
+    const torsoAngleStart = vertical;
+
+    if (phase.phase === "press_up") {
+      // Start from Bent (Overlap with Squat Up)
+      tibiaAngleStart = vertical - EXTENSION_OFFSET / 2;
+      femurAngleStart = vertical + EXTENSION_OFFSET / 2;
+    }
+    // Else (press_down): Target Straight (Overlap with Squat Down)
+
+    // Interpolate body to full lockout (Vertical)
+    const tBody = progress;
+    const tibiaAngle = tibiaAngleStart + (vertical - tibiaAngleStart) * tBody;
+    const femurAngle = femurAngleStart + (vertical - femurAngleStart) * tBody;
+    const torsoAngle = torsoAngleStart + (vertical - torsoAngleStart) * tBody;
 
     const ankle = { x: 0, y: segments.footHeight };
-    const knee = { x: 0, y: ankle.y + segments.tibia };
-    const hip = { x: 0, y: knee.y + segments.femur };
-    const shoulder = { x: 0, y: hip.y + segments.torso };
-
-    // Calculate arm angles for press movement
-    // At start: arms bent with elbows forward (front rack)
-    // At top: arms straight overhead
-    const shoulderAngleStart = Math.PI / 2 + 0.3; // Slightly forward
-    const shoulderAngleLockout = Math.PI / 2; // Straight up
-    const shoulderAngleRad = shoulderAngleStart + (shoulderAngleLockout - shoulderAngleStart) * pressProgress;
-
-    const elbowAngleStart = Math.PI / 2 + 0.6; // More vertical
-    const elbowAngleLockout = shoulderAngleLockout; // Straight
-    const elbowAngleRad = elbowAngleStart + (elbowAngleLockout - elbowAngleStart) * pressProgress;
-
-    // Build arm chain with proper forward kinematics
-    const armChain = KinematicsUtils.buildArmChain(
-      shoulder,
-      segments.upperArm,
-      segments.forearm,
-      shoulderAngleRad,
-      elbowAngleRad
+    const chain = KinematicsUtils.buildLowerBodyChain(
+      ankle,
+      segments.tibia,
+      segments.femur,
+      segments.torso,
+      tibiaAngle,
+      femurAngle,
+      torsoAngle
     );
 
-    const elbow = armChain.elbow;
-    const wrist = armChain.wrist;
+    // =========================================================================
+    // BAR PATH
+    // =========================================================================
 
-    // Bar position matches wrist (ensures rigid segments)
-    const actualBar = { x: wrist.x, y: wrist.y };
+    const startOffset = { x: 0.20 * heightScale, y: 0.05 * heightScale };
+    const endOffset = { x: 0, y: segments.upperArm + segments.forearm };
 
-    // Calculate actual elbow angle for display
-    const elbowAngleDeg = KinematicsUtils.toDegrees(elbowAngleRad - shoulderAngleRad) + 180;
+    // Interpolate Offset
+    const tBar = Math.max(0, Math.min(1, progress));
+
+    const currentOffsetX = startOffset.x + (endOffset.x - startOffset.x) * tBar;
+    const currentOffsetY = startOffset.y + (endOffset.y - startOffset.y) * tBar;
+
+    const wrist = {
+      x: chain.shoulder.x + currentOffsetX,
+      y: chain.shoulder.y + currentOffsetY
+    };
+
+    // =========================================================================
+    // ARM IK
+    // =========================================================================
+
+    const ikResultCw = KinematicsUtils.solveTwoLinkIK(
+      chain.shoulder,
+      wrist,
+      segments.upperArm,
+      segments.forearm,
+      "cw"
+    );
+    const ikResultCcw = KinematicsUtils.solveTwoLinkIK(
+      chain.shoulder,
+      wrist,
+      segments.upperArm,
+      segments.forearm,
+      "ccw"
+    );
+
+    // Elbow Forward preference
+    let elbow = ikResultCw.joint;
+    if (ikResultCcw.joint.x > ikResultCw.joint.x) {
+      elbow = ikResultCcw.joint;
+    }
+
+    const shoulderAngleRad = Math.atan2(elbow.y - chain.shoulder.y, elbow.x - chain.shoulder.x);
+    const elbowAngleRad = Math.atan2(wrist.y - elbow.y, wrist.x - elbow.x);
+    const elbowDeg = KinematicsUtils.toDegrees(elbowAngleRad - shoulderAngleRad) + 180;
+
+    const handSpacing = 0.25 * heightScale;
+    const footSpacing = 0.15 * heightScale;
 
     return {
       ankle,
-      knee,
-      hip,
-      shoulder,
+      knee: chain.knee,
+      hip: chain.hip,
+      shoulder: chain.shoulder,
       elbow,
       wrist,
-      bar: actualBar,
+      toe: { x: ankle.x + segments.footLength, y: 0 },
+      bar: wrist,
       contacts: {
-        leftFoot: { x: -0.15, y: segments.footHeight },
-        rightFoot: { x: 0.15, y: segments.footHeight },
-        leftHand: { x: -0.25, y: actualBar.y },
-        rightHand: { x: 0.25, y: actualBar.y },
+        leftFoot: { x: -footSpacing, y: segments.footHeight },
+        rightFoot: { x: footSpacing, y: segments.footHeight },
+        leftHand: { x: wrist.x - handSpacing, y: wrist.y },
+        rightHand: { x: wrist.x + handSpacing, y: wrist.y },
       },
       angles: {
         ankle: 0,
@@ -191,8 +291,9 @@ export class ThrusterPoseSolver extends PoseSolver {
         hip: 180,
         trunk: 0,
         shoulder: KinematicsUtils.toDegrees(shoulderAngleRad),
-        elbow: elbowAngleDeg,
+        elbow: elbowDeg,
       },
+      barAngle: 0,
     };
   }
 }

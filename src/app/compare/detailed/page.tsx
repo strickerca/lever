@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, AlertCircle } from "lucide-react";
-import { LiftFamily, Sex, ComparisonResult, AnthropometryMode } from "@/types";
+import { AlertCircle } from "lucide-react";
+import { LiftFamily, Sex, ComparisonResult, LiftData, SavedProfile } from "@/types";
 import { HeightWeightInput } from "@/components/anthropometry/HeightWeightInput";
-// SegmentInput removed
 import { ManualSegmentLengths } from "@/components/anthropometry/ManualSegmentLengths";
 import { LiftSelector } from "@/components/comparison/LiftSelector";
 import { ResultsDisplay } from "@/components/comparison/ResultsDisplay";
@@ -23,9 +21,18 @@ import {
   getErrorMessage,
 } from "@/lib/validation";
 import { SEGMENT_RATIOS } from "@/lib/biomechanics/constants";
+import { MovementOptions } from "@/lib/animation/types";
+import { PersistenceDrawer } from "@/components/persistence/PersistenceDrawer";
+import { PersistenceTrigger } from "@/components/persistence/PersistenceTrigger";
 
 export default function DetailedComparePage() {
-  const { addComparison } = useLeverStore();
+  const addComparison = useLeverStore((s) => s.addComparison);
+  const savedProfiles = useLeverStore((s) => s.savedProfiles);
+  const comparisonHistory = useLeverStore((s) => s.comparisonHistory);
+
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"history" | "profiles">("history");
 
   // Lifter A state
   const [lifterA, setLifterA] = useState({
@@ -110,7 +117,7 @@ export default function DetailedComparePage() {
   }
 
   // Lift state - can be different for each lifter
-  const [liftDataA, setLiftDataA] = useState({
+  const [liftDataA, setLiftDataA] = useState<LiftData>({
     liftFamily: LiftFamily.SQUAT,
     variant: "highBar",
     load: 100,
@@ -120,7 +127,7 @@ export default function DetailedComparePage() {
     barStartHeightOffset: 0,
   });
 
-  const [liftDataB, setLiftDataB] = useState({
+  const [liftDataB, setLiftDataB] = useState<LiftData>({
     liftFamily: LiftFamily.SQUAT,
     variant: "highBar",
     load: 100,
@@ -134,48 +141,7 @@ export default function DetailedComparePage() {
   const [isComparing, setIsComparing] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  // Handler for centralized lift family change
-  const handleLiftFamilyChange = (newFamily: LiftFamily) => {
-    // Update both lifters with the new lift family and reset variants
-    // Each lift family has its own default variant format
-    const defaultVariant =
-      newFamily === LiftFamily.SQUAT ? "highBar" :
-        newFamily === LiftFamily.DEADLIFT ? "conventional" :
-          newFamily === LiftFamily.BENCH ? "medium-moderate" :
-            newFamily === LiftFamily.PULLUP ? "pronated" :
-              newFamily === LiftFamily.PUSHUP ? "standard" :
-                newFamily === LiftFamily.OHP ? "standard" :
-                  newFamily === LiftFamily.THRUSTER ? "standard" :
-                    "standard";
-
-    setLiftDataA({
-      ...liftDataA,
-      liftFamily: newFamily,
-      variant: defaultVariant,
-      stance: "normal",
-      pushupWeight: 0,
-      barStartHeightOffset: 0,
-    });
-
-    setLiftDataB({
-      ...liftDataB,
-      liftFamily: newFamily,
-      variant: defaultVariant,
-      stance: "normal",
-      pushupWeight: 0,
-      barStartHeightOffset: 0,
-    });
-  };
-
-  const handleLiftDataAChange = (data: {
-    liftFamily: LiftFamily;
-    variant: string;
-    load: number;
-    reps: number;
-    stance?: string;
-    pushupWeight?: number;
-    barStartHeightOffset?: number;
-  }) => {
+  const handleLiftDataAChange = (data: LiftData) => {
     setLiftDataA({
       ...data,
       stance: data.stance ?? "normal",
@@ -184,15 +150,7 @@ export default function DetailedComparePage() {
     });
   };
 
-  const handleLiftDataBChange = (data: {
-    liftFamily: LiftFamily;
-    variant: string;
-    load: number;
-    reps: number;
-    stance?: string;
-    pushupWeight?: number;
-    barStartHeightOffset?: number;
-  }) => {
+  const handleLiftDataBChange = (data: LiftData) => {
     setLiftDataB({
       liftFamily: data.liftFamily,
       variant: data.variant,
@@ -202,6 +160,26 @@ export default function DetailedComparePage() {
       pushupWeight: data.pushupWeight ?? 0,
       barStartHeightOffset: data.barStartHeightOffset ?? 0,
     });
+  };
+
+  const toMovementOptions = (data: LiftData): MovementOptions => {
+    const [benchGripRaw, benchArchRaw] = data.variant.split("-");
+
+    return {
+      squatVariant: data.liftFamily === LiftFamily.SQUAT ? (data.variant as MovementOptions["squatVariant"]) : undefined,
+      squatStance: data.liftFamily === LiftFamily.SQUAT ? (data.stance as MovementOptions["squatStance"]) : undefined,
+      deadliftVariant: data.liftFamily === LiftFamily.DEADLIFT ? (data.variant as MovementOptions["deadliftVariant"]) : undefined,
+      sumoStance: data.liftFamily === LiftFamily.DEADLIFT ? (data.stance as MovementOptions["sumoStance"]) : undefined,
+      deadliftBarOffset: data.liftFamily === LiftFamily.DEADLIFT ? data.barStartHeightOffset : undefined,
+      benchGrip: data.liftFamily === LiftFamily.BENCH ? (benchGripRaw as MovementOptions["benchGrip"]) : undefined,
+      benchArch: data.liftFamily === LiftFamily.BENCH ? (benchArchRaw as MovementOptions["benchArch"]) : undefined,
+      pullupGrip: data.liftFamily === LiftFamily.PULLUP ? (data.variant as MovementOptions["pullupGrip"]) : undefined,
+      pushupWidth:
+        data.liftFamily === LiftFamily.PUSHUP
+          ? ((data.variant === "standard" ? "normal" : data.variant) as MovementOptions["pushupWidth"])
+          : undefined,
+      pushupWeight: data.liftFamily === LiftFamily.PUSHUP ? data.pushupWeight : undefined,
+    };
   };
 
   const handleCompare = () => {
@@ -247,8 +225,6 @@ export default function DetailedComparePage() {
       try {
         // Create anthropometry profiles
         // If custom segments are enabled, use them. Otherwise use simple profile.
-        // (Advanced SD logic is removed in favor of direct entry)
-
         // Lifter A
         let anthroA;
         if (customSegmentsA.enabled) {
@@ -293,7 +269,19 @@ export default function DetailedComparePage() {
         );
 
         setResult(comparisonResult);
-        addComparison(comparisonResult);
+        addComparison(comparisonResult, {
+          liftFamily: liftDataA.liftFamily,
+          variantA: liftDataA.variant,
+          variantB: liftDataB.variant,
+          loadA: liftDataA.load,
+          loadB: liftDataB.load,
+          repsA: liftDataA.reps,
+          repsB: liftDataB.reps,
+          stanceA: liftDataA.stance,
+          stanceB: liftDataB.stance,
+          pushupWeightA: liftDataA.pushupWeight,
+          pushupWeightB: liftDataB.pushupWeight,
+        });
         showToast("success", "Comparison completed successfully!");
 
         setTimeout(() => {
@@ -311,6 +299,80 @@ export default function DetailedComparePage() {
     }, 300);
   };
 
+  // --- Drawer callbacks ---
+  const handleLoadHistory = (entry: ComparisonResult) => {
+    if (entry.snapshot) {
+      const s = entry.snapshot;
+      setLiftDataA((prev) => ({
+        ...prev,
+        liftFamily: s.liftFamily,
+        variant: s.variantA,
+        load: s.loadA,
+        reps: s.repsA,
+        stance: s.stanceA ?? prev.stance,
+        pushupWeight: s.pushupWeightA ?? 0,
+      }));
+      setLiftDataB((prev) => ({
+        ...prev,
+        liftFamily: s.liftFamily,
+        variant: s.variantB,
+        load: s.loadB,
+        reps: s.repsB,
+        stance: s.stanceB ?? prev.stance,
+        pushupWeight: s.pushupWeightB ?? 0,
+      }));
+    }
+    setLifterA((prev) => ({
+      ...prev,
+      name: entry.lifterA.name,
+      height: entry.lifterA.anthropometry.segments.height,
+      weight: entry.lifterA.anthropometry.mass,
+      sex: entry.lifterA.anthropometry.sex,
+    }));
+    setLifterB((prev) => ({
+      ...prev,
+      name: entry.lifterB.name,
+      height: entry.lifterB.anthropometry.segments.height,
+      weight: entry.lifterB.anthropometry.mass,
+      sex: entry.lifterB.anthropometry.sex,
+    }));
+    setResult(null);
+    showToast("success", "Comparison inputs restored — click Compare to recalculate");
+  };
+
+  const handleLoadProfileAsA = (profile: SavedProfile) => {
+    setLifterA({
+      height: profile.height,
+      weight: profile.weight,
+      sex: profile.sex,
+      name: profile.name,
+    });
+    if (profile.customSegments) {
+      setCustomSegmentsA({ enabled: true, segments: profile.customSegments });
+    } else {
+      setCustomSegmentsA((prev) => ({ ...prev, enabled: false }));
+    }
+  };
+
+  const handleLoadProfileAsB = (profile: SavedProfile) => {
+    setLifterB({
+      height: profile.height,
+      weight: profile.weight,
+      sex: profile.sex,
+      name: profile.name,
+    });
+    if (profile.customSegments) {
+      setCustomSegmentsB({ enabled: true, segments: profile.customSegments });
+    } else {
+      setCustomSegmentsB((prev) => ({ ...prev, enabled: false }));
+    }
+  };
+
+  const openDrawer = (tab: "history" | "profiles") => {
+    setDrawerTab(tab);
+    setDrawerOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-transparent">
       <ToastContainer />
@@ -319,6 +381,13 @@ export default function DetailedComparePage() {
       <ComparisonModeSelector currentMode="detailed" />
 
       <div className="max-w-7xl mx-auto px-4 py-4 sm:py-8">
+        <div className="flex justify-end mb-4">
+          <PersistenceTrigger
+            onClick={() => openDrawer("history")}
+            historyCount={comparisonHistory.length}
+            profileCount={savedProfiles.length}
+          />
+        </div>
 
         {/* Validation Errors */}
         {validationErrors.length > 0 && (
@@ -465,52 +534,8 @@ export default function DetailedComparePage() {
                 anthropometry: result.lifterB.anthropometry,
               }}
               movement={liftDataA.liftFamily}
-              optionsA={{
-                squatVariant: liftDataA.liftFamily === LiftFamily.SQUAT ? (liftDataA.variant as any) : undefined,
-                squatStance: liftDataA.liftFamily === LiftFamily.SQUAT ? (liftDataA.stance as any) : undefined,
-                deadliftVariant:
-                  liftDataA.liftFamily === LiftFamily.DEADLIFT ? (liftDataA.variant as any) : undefined,
-                sumoStance: liftDataA.liftFamily === LiftFamily.DEADLIFT ? (liftDataA.stance as any) : undefined,
-                deadliftBarOffset:
-                  liftDataA.liftFamily === LiftFamily.DEADLIFT ? liftDataA.barStartHeightOffset : undefined,
-                benchGrip:
-                  liftDataA.liftFamily === LiftFamily.BENCH
-                    ? (liftDataA.variant.split("-")[0] as any)
-                    : undefined,
-                benchArch:
-                  liftDataA.liftFamily === LiftFamily.BENCH
-                    ? (liftDataA.variant.split("-")[1] as any)
-                    : undefined,
-                pullupGrip: liftDataA.liftFamily === LiftFamily.PULLUP ? (liftDataA.variant as any) : undefined,
-                pushupWidth:
-                  liftDataA.liftFamily === LiftFamily.PUSHUP
-                    ? ((liftDataA.variant === "standard" ? "normal" : liftDataA.variant) as any)
-                    : undefined,
-                pushupWeight: liftDataA.liftFamily === LiftFamily.PUSHUP ? liftDataA.pushupWeight : undefined,
-              }}
-              optionsB={{
-                squatVariant: liftDataB.liftFamily === LiftFamily.SQUAT ? (liftDataB.variant as any) : undefined,
-                squatStance: liftDataB.liftFamily === LiftFamily.SQUAT ? (liftDataB.stance as any) : undefined,
-                deadliftVariant:
-                  liftDataB.liftFamily === LiftFamily.DEADLIFT ? (liftDataB.variant as any) : undefined,
-                sumoStance: liftDataB.liftFamily === LiftFamily.DEADLIFT ? (liftDataB.stance as any) : undefined,
-                deadliftBarOffset:
-                  liftDataB.liftFamily === LiftFamily.DEADLIFT ? liftDataB.barStartHeightOffset : undefined,
-                benchGrip:
-                  liftDataB.liftFamily === LiftFamily.BENCH
-                    ? (liftDataB.variant.split("-")[0] as any)
-                    : undefined,
-                benchArch:
-                  liftDataB.liftFamily === LiftFamily.BENCH
-                    ? (liftDataB.variant.split("-")[1] as any)
-                    : undefined,
-                pullupGrip: liftDataB.liftFamily === LiftFamily.PULLUP ? (liftDataB.variant as any) : undefined,
-                pushupWidth:
-                  liftDataB.liftFamily === LiftFamily.PUSHUP
-                    ? ((liftDataB.variant === "standard" ? "normal" : liftDataB.variant) as any)
-                    : undefined,
-                pushupWeight: liftDataB.liftFamily === LiftFamily.PUSHUP ? liftDataB.pushupWeight : undefined,
-              }}
+              optionsA={toMovementOptions(liftDataA)}
+              optionsB={toMovementOptions(liftDataB)}
               repsA={liftDataA.reps}
               repsB={liftDataB.reps}
               metricsA={result.lifterA.metrics}
@@ -540,6 +565,15 @@ export default function DetailedComparePage() {
           </div>
         )}
       </div>
+
+      <PersistenceDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        initialTab={drawerTab}
+        onLoadHistory={handleLoadHistory}
+        onLoadProfileAsA={handleLoadProfileAsA}
+        onLoadProfileAsB={handleLoadProfileAsB}
+      />
     </div>
   );
 }

@@ -6,19 +6,21 @@
  */
 
 import { Point2D } from "@/types";
-import { Pose2D, PoseSolverInput, PoseSolverResult, AnimationPhase } from "./types";
+import { Pose2D, PoseSolverInput, PoseSolverResult } from "./types";
 
 /**
  * Utility functions for forward kinematics and validation
  */
 export class KinematicsUtils {
+  private static readonly EPSILON = 1e-9;
   /**
    * Calculate distance between two points
    */
   static distance(p1: Point2D, p2: Point2D): number {
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
-    return Math.sqrt(dx * dx + dy * dy);
+    const dz = (p2.z ?? 0) - (p1.z ?? 0);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   /**
@@ -107,6 +109,80 @@ export class KinematicsUtils {
     const wrist = this.calculateEndpoint(elbow, forearmLength, elbowAngleRad);
 
     return { elbow, wrist };
+  }
+
+  /**
+   * Solve a 2-link planar inverse kinematics problem (circle-circle intersection).
+   *
+   * Finds a joint point J such that:
+   * - distance(start, J) = lengthA
+   * - distance(J, end)   = lengthB
+   *
+   * Returns one of the two possible solutions based on bendDirection.
+   * If the target is unreachable, it will be clamped along the start->end direction.
+   */
+  static solveTwoLinkIK(
+    start: Point2D,
+    end: Point2D,
+    lengthA: number,
+    lengthB: number,
+    bendDirection: "ccw" | "cw" = "ccw"
+  ): { joint: Point2D; reachable: boolean } {
+    const dxRaw = end.x - start.x;
+    const dyRaw = end.y - start.y;
+    const dRaw = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+
+    const maxD = lengthA + lengthB;
+    const minD = Math.abs(lengthA - lengthB);
+
+    // Degenerate case: start and end are the same point
+    if (dRaw < this.EPSILON) {
+      const joint = { x: start.x + lengthA, y: start.y };
+      return { joint, reachable: false };
+    }
+
+    // Clamp target distance to reachable range by moving end along the ray
+    let reachable = true;
+    let d = dRaw;
+    let endX = end.x;
+    let endY = end.y;
+
+    if (dRaw > maxD) {
+      reachable = false;
+      const s = maxD / dRaw;
+      endX = start.x + dxRaw * s;
+      endY = start.y + dyRaw * s;
+      d = maxD;
+    } else if (dRaw < minD) {
+      reachable = false;
+      const s = minD / dRaw;
+      endX = start.x + dxRaw * s;
+      endY = start.y + dyRaw * s;
+      d = minD;
+    }
+
+    const dx = endX - start.x;
+    const dy = endY - start.y;
+
+    // Circle intersection
+    const a = (lengthA * lengthA - lengthB * lengthB + d * d) / (2 * d);
+    const h2 = lengthA * lengthA - a * a;
+    const h = Math.sqrt(Math.max(0, h2));
+
+    const px = start.x + (a * dx) / d;
+    const py = start.y + (a * dy) / d;
+
+    // Perpendicular unit vector (ccw from start->end)
+    const rx = -dy / d;
+    const ry = dx / d;
+
+    const sign = bendDirection === "ccw" ? 1 : -1;
+    const joint = {
+      x: px + sign * h * rx,
+      y: py + sign * h * ry,
+    };
+
+    return { joint, reachable };
   }
 
   /**

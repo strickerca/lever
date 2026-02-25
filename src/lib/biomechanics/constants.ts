@@ -1,4 +1,4 @@
-import { Sex, BenchGripWidth, BenchArchStyle, PullupGrip } from "../../types";
+import { BenchGripWidth, BenchArchStyle } from "../../types";
 
 // Physical constants
 export const GRAVITY = 9.81; // m/s²
@@ -8,6 +8,12 @@ export const GRAVITY = 9.81; // m/s²
  * Note: These sum to 0.948, not 1.0
  * The normalizeToHeight() function handles this discrepancy
  * Source: Winter, D.A. (2009). Biomechanics and Motor Control of Human Movement
+ * 
+ * EXTRAPOLATION NOTE:
+ * For heights outside standard population means (e.g. >2m), we assume geometric 
+ * similarity (isometric scaling). Segment lengths scale linearly with height 
+ * based on these population-average ratios. This provides the most scientifically 
+ * valid estimation in the absence of specific allometric data for extreme statures.
  */
 export const SEGMENT_RATIOS = {
   male: {
@@ -16,9 +22,10 @@ export const SEGMENT_RATIOS = {
     upperArm: 0.186,
     forearm: 0.146,
     hand: 0.108,
-    femur: 0.245, // thigh segment
-    tibia: 0.246, // shank segment
+    femur: 0.276, // thigh segment (Target TFR 0.781)
+    tibia: 0.215, // shank segment
     footHeight: 0.039, // vertical component
+    footLength: 0.152, // horizontal length (Winter 2009 approx)
   },
   female: {
     headNeck: 0.13,
@@ -26,10 +33,46 @@ export const SEGMENT_RATIOS = {
     upperArm: 0.183,
     forearm: 0.143,
     hand: 0.106,
-    femur: 0.245, // same as male per spec
-    tibia: 0.246, // same as male per spec
+    femur: 0.276, // same as male per spec
+    tibia: 0.215, // same as male per spec
     footHeight: 0.039,
+    footLength: 0.152,
   },
+} as const;
+
+/**
+ * Hand Grip Ratio
+ * Proportion of hand length from wrist to center of fist (grip point)
+ * Used to calculate effective reach
+ */
+export const HAND_GRIP_RATIO = 0.45;
+
+/**
+ * Standard Segment Mass as fraction of Total Body Weight
+ * Source: Dempster (1955) via Winter (2009)
+ * Used for "Bio-Digital" visualization mass-based sizing.
+ */
+export const SEGMENT_MASS_RATIOS = {
+  male: {
+    headNeck: 0.079,
+    torso: 0.486,
+    upperArm: 0.028,
+    forearm: 0.016,
+    hand: 0.006,
+    femur: 0.100,
+    tibia: 0.0465,
+    foot: 0.0145,
+  },
+  female: {
+    headNeck: 0.067, // slightly lighter relative to total
+    torso: 0.520, // slightly heavier relative to total (inc breasts/hips)
+    upperArm: 0.026,
+    forearm: 0.014,
+    hand: 0.005,
+    femur: 0.115, // heavier thigh mass distribution
+    tibia: 0.045,
+    foot: 0.012,
+  }
 } as const;
 
 /**
@@ -111,16 +154,6 @@ export const BENCH_ARCH_HEIGHTS: Record<BenchArchStyle, number> = {
 } as const;
 
 /**
- * Grip difficulty factors for pullup variants
- * Higher factor = more difficult
- */
-export const GRIP_FACTORS: Record<PullupGrip, number> = {
-  [PullupGrip.SUPINATED]: 1.0, // chin-up (easiest)
-  [PullupGrip.NEUTRAL]: 1.08,
-  [PullupGrip.PRONATED]: 1.15, // pull-up (hardest)
-} as const;
-
-/**
  * Default mobility values (degrees)
  * Used when user doesn't specify custom mobility
  */
@@ -129,12 +162,6 @@ export const DEFAULT_MOBILITY = {
   maxHipFlexion: 130, // typical range 110-130°
   maxShoulderFlexion: 165, // typical range 150-180°
 } as const;
-
-/**
- * Sumo deadlift ROM reduction factor
- * Source: Escamilla et al. (2000)
- */
-export const SUMO_ROM_FACTOR = 0.85; // 15-20% less displacement than conventional
 
 /**
  * Standard chest depth for bench press calculations
@@ -163,6 +190,14 @@ export const STANDARD_PLATE_RADIUS = 0.225; // meters
 /**
  * Standard deviation multiplier formula constant
  * Formula: multiplier = 1 + (SD × 0.045)
+ * 
+ * Origin: derived from coefficient of variation (CV) for human limb lengths.
+ * Typical CV for long bone lengths is ~4-5%. 
+ * 0.045 represents a 4.5% change in length per standard deviation.
+ * 
+ * Archetype alignment:
+ * - "Short/Long" options use +/- 1.5 SD (+/- 6.75%)
+ * - "Very Short/Long" options use +/- 3.0 SD (+/- 13.5%)
  */
 export const SD_MULTIPLIER_COEFFICIENT = 0.045;
 
@@ -260,4 +295,17 @@ export const SQUAT_VARIANT_LOAD_CAPACITY_FACTORS = {
   highBar: 1.00,   // baseline
   lowBar: 1.075,   // ~7.5% more load capacity (research: 5-10% range)
   front: 0.85,     // ~15% less load capacity (more upright, quad-dominant)
+} as const;
+
+/**
+ * Base Demand Factors (difficulty multipliers) for metrics normalization
+ */
+export const BASE_DEMAND_FACTORS = {
+  SQUAT: 1.0,
+  DEADLIFT: 1.1,
+  BENCH: 0.9,
+  PULLUP: 1.2,
+  PUSHUP: 0.8,
+  OHP: 1.0,
+  THRUSTER: 1.5,
 } as const;

@@ -2,6 +2,9 @@
 export interface Point2D {
   x: number; // meters
   y: number; // meters
+  z?: number; // meters (optional depth for 3D projection)
+  currentTorque?: number; // Nm
+  maxTorque?: number; // Nm
 }
 
 // Enums
@@ -80,6 +83,7 @@ export interface SegmentLengths {
   femur: number; // meters
   tibia: number; // meters
   footHeight: number; // meters (vertical component)
+  footLength: number; // meters (horizontal length)
 }
 
 export interface DerivedAnthropometry {
@@ -117,6 +121,9 @@ export interface KinematicSolution {
     hip: Point2D;
     shoulder: Point2D;
     bar: Point2D;
+    toe: Point2D;
+    elbow?: Point2D; // NEW: Optional for visualization
+    wrist?: Point2D; // NEW: Optional for visualization
   };
   angles: {
     ankle: number; // degrees
@@ -139,11 +146,19 @@ export interface LiftMetrics {
   totalWork: number; // joules
   demandFactor: number; // unitless difficulty multiplier
   scoreP4P: number; // pound-for-pound score
+  calories: number; // estimated metabolic cost in kcal
+  burnRate: number; // metabolic rate in kcal/h
+  peakPower: number; // estimated peak mechanical power in Watts
   vpi?: number; // Volume Performance Index (pullups only)
+  valid: boolean;
+  warnings: string[];
 }
 
 // Comparison result types
 export interface ComparisonResult {
+  id?: string; // Unique ID for history entries
+  timestamp?: number; // When comparison was made
+  snapshot?: ComparisonSnapshot; // Raw inputs for reloading
   lifterA: {
     name: string;
     anthropometry: Anthropometry;
@@ -153,7 +168,7 @@ export interface ComparisonResult {
   lifterB: {
     name: string;
     anthropometry: Anthropometry;
-    metrics?: LiftMetrics; // May not be calculated if only finding equivalent
+    metrics: LiftMetrics; // May not be calculated if only finding equivalent
     kinematics?: KinematicSolution;
     equivalentLoad: number; // kg - what load would match lifter A's demand
     equivalentReps: number; // How many reps to match lifter A's work
@@ -185,6 +200,12 @@ export interface ComparisonResult {
     impact: "advantage_A" | "advantage_B" | "neutral";
     message: string;
   }>;
+  equalizer: {
+    lifterANormalizedLoad: number;
+    lifterBNormalizedLoad: number;
+    multiplier: number;
+    winner: 'lifterA' | 'lifterB';
+  };
 }
 
 // Standard Deviation modifiers for advanced mode
@@ -194,8 +215,53 @@ export interface SDModifiers {
   torso: number; // -3 to +3 SD
 }
 
-// Performance input
-export interface PerformanceInput {
-  load: number; // kg
+export interface LiftData {
+  liftFamily: LiftFamily;
+  variant: string;
+  load: number;
   reps: number;
+  stance?: string;
+  pushupWeight?: number;
+  barStartHeightOffset?: number;
+  chestSize?: "small" | "average" | "large";
+  squatDepth?: "parallel" | "belowParallel";
 }
+
+export type TorsoLegProportion = "veryLongLegs" | "longLegs" | "average" | "longTorso" | "veryLongTorso";
+export type ArmProportion = "extraShort" | "short" | "average" | "long" | "extraLong";
+
+// Saved profile for persistence
+export interface SavedProfile {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  height: number; // meters
+  weight: number; // kg
+  sex: Sex;
+  torsoLegRatio: TorsoLegProportion;
+  armLength: ArmProportion;
+  customSegments?: {
+    torso: number;
+    upperArm: number;
+    forearm: number;
+    femur: number;
+    tibia: number;
+  };
+}
+
+// Snapshot of comparison inputs for history reload
+export interface ComparisonSnapshot {
+  liftFamily: LiftFamily;
+  variantA: string;
+  variantB: string;
+  loadA: number;
+  loadB: number;
+  repsA: number;
+  repsB: number;
+  stanceA?: string;
+  stanceB?: string;
+  pushupWeightA?: number;
+  pushupWeightB?: number;
+}
+

@@ -3,7 +3,6 @@ import {
   createSimpleProfile,
   createAdvancedProfile,
   normalizeToHeight,
-  computeDerivedAnthropometry,
   validateAnthropometry,
 } from "../anthropometry";
 import { Sex } from "@/types";

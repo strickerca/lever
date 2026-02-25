@@ -35,13 +35,13 @@ export default function HomePage() {
           </h2>
           <div className="space-y-4 text-lg text-gray-700 max-w-3xl mx-auto">
             <p>
-              A 5'7" lifter squatting 315 lbs moves the bar 23 inches. A 6'3"
+              A 5&apos;7&quot; lifter squatting 315 lbs moves the bar 23 inches. A 6&apos;3&quot;
               lifter squatting the same weight moves it 27 inches — <strong>17% more
               work</strong>.
             </p>
             <p>
               Traditional comparisons ignore biomechanics. Wilks and Dots scores
-              use simple body weight formulas, but they don't account for limb
+              use simple body weight formulas, but they don&rsquo;t account for limb
               lengths, moment arms, or range of motion.
             </p>
             <p className="text-blue-600 font-semibold">
@@ -95,8 +95,8 @@ export default function HomePage() {
               Equivalent Load
             </h3>
             <p className="text-gray-600">
-              Converts performances across body types: "Your 315 lbs is equivalent
-              to their 285 lbs" based on actual biomechanics.
+              Converts performances across body types: &quot;Your 315 lbs is equivalent
+              to their 285 lbs&quot; based on actual biomechanics.
             </p>
           </div>
         </div>
